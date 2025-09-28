@@ -1,5 +1,5 @@
 # Crawl2Schema
-[![Pytest](https://github.com/cvcvka5/crawl2schema/actions/workflows/python-tests.yml/badge.svg?event=workflow_run)](https://github.com/cvcvka5/crawl2schema/actions/workflows/python-tests.yml)
+[![Python Tests](https://github.com/cvcvka5/crawl2schema/actions/workflows/python-tests.yml/badge.svg)](https://github.com/cvcvka5/crawl2schema/actions/workflows/python-tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Crawl2Schema** is a Python web crawler that uses **schemas** to extract, format, and return structured data from websites. It’s designed to make web scraping more organized, reusable, and easy to manage.
