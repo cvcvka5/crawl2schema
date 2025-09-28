@@ -54,7 +54,9 @@ class SyncHTTPCrawler:
         return merged_captures        
     
     def paginated_fetch(
-            self, base_url: str, start_page: int, end_page: int, crawler_schema: CrawlerSchema, headers: Dict = None, interval_s: int = 0, *args, **kwargs
+            self, base_url: str, start_page: int, end_page: int,
+            crawler_schema: CrawlerSchema, headers: Dict = None, interval_s: int = 0,
+            *args, **kwargs
         ) -> List[Dict]:
             if "{page}" not in base_url:
                 raise ValueError("Base URL must include '{page}' placeholder. (EX: https://www.example.com?page={page})")
