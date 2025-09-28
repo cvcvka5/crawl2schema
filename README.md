@@ -63,6 +63,28 @@ print(results)
 python -m pytest -v
 ```
 
+## Feature Roadmap for Crawl2Schema
+
+We should plan and implement additional features to make Crawl2Schema more powerful, flexible, and user-friendly. Proposed features include:
+
+### Core Features / Enhancements
+
+- [ ] **Async Crawling:** Implement `AsyncHTTPCrawler` using `aiohttp` and `asyncio`.
+- [ ] **Advanced Pagination:** Support dynamic pagination (e.g., “next page” buttons) and custom pagination rules.
+- [ ] **URL Following / Crawling:** Follow links from a page using a schema field, with optional depth limits.
+- [ ] **Output Options:** Save results to JSON, CSV, SQLite, or Pandas DataFrame.
+- [ ] **Error Handling & Retry:** Retry failed requests with exponential backoff and log failures.
+- [ ] **Rate Limiting & Throttling:** Control request frequency and per-domain concurrency.
+- [ ] **Logging & Debugging:** Verbose mode and detailed logs for scraping steps.
+- [ ] **Schema Enhancements:** Nested schemas, conditional scraping, and pre-processing functions.
+- [ ] **Browser Support:** Add Playwright or Selenium crawler for JS-heavy pages.
+- [ ] **Testing & Validation:** Schema validation and unit tests with mock HTML pages.
+
+## Goal
+
+Prioritize and implement these features in stages to improve Crawl2Schema’s usability and reliability.
+
+
 ---
 
 ## License
