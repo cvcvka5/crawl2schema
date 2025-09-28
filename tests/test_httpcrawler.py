@@ -2,7 +2,7 @@ import pytest
 import requests
 
 def test_httpcrawler():
-    from crawl2db.crawler.http import SyncHTTPCrawler
+    from crawl2schema.crawler.http import SyncHTTPCrawler
     
     url = "https://web-scraping.dev/products"
     base_url = "https://web-scraping.dev/products?page={page}"
