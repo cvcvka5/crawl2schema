@@ -53,7 +53,7 @@ class SyncHTTPCrawler:
             
         return merged_captures        
     
-    def paginated_fetch(
+    def fetch_url_paginated(
             self, base_url: str, start_page: int, end_page: int,
             crawler_schema: CrawlerSchema, headers: Dict = None, interval_s: int = 0,
             *args, **kwargs
