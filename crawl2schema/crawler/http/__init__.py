@@ -1,78 +1,128 @@
-from typing import List, Callable, Dict
+from typing import List, Dict, Any
 import requests
-import sqlite3
-from ..schema import CrawlerSchema
+from ..schema import CrawlerSchema, FieldSchema
 from selectolax.parser import HTMLParser
-import time
+import json
 
 
 class SyncHTTPCrawler:
-    def __init__(self, session: requests.Session = None):
-        self.session = requests.Session() if session is None else session
-    
-    def fetch(self, url: str, crawler_schema: CrawlerSchema, headers: Dict, *args, **kwargs) -> List[Dict]:
-        response = self.session.get(url, *args, headers=headers, **kwargs)
-        tree = HTMLParser(response.text)
-        
-        baseSelector = crawler_schema.get("baseSelector", "body")
-        targetElements = crawler_schema.get("targetElements", [])
-        
-        baseElement = tree.css_first(baseSelector)
-        
-        captures = []
-        for target_el in targetElements:
-            target_selector = target_el["selector"]
-            default_value = target_el.get("default", None)
-            
-            specific_captures = []
-            for el in baseElement.css(target_selector):
-                target_attribute = target_el.get("attribute", False)
-                if target_attribute:
-                    value = el.attributes.get(target_attribute, default_value)
-                else:
-                    value = el.text()
-                
-                value = target_el.get("type", str)(value)
-                
-                if target_el.get("formatter", False):
-                    formatter = target_el["formatter"]
-                    value = formatter(value)
-                
-                capture = { target_el["name"]: value }
-                specific_captures.append(capture)
-                
-            captures.append(specific_captures)
-            
-        merged_captures = []
-        for group in zip(*captures):
-            merged = {}
-            for data in group:
-                for key, value in data.items():
-                    merged[key] = value
-            merged_captures.append(merged)
-            
-        return merged_captures        
-    
-    def fetch_url_paginated(
-            self, base_url: str, start_page: int, end_page: int,
-            crawler_schema: CrawlerSchema, headers: Dict = None, interval_s: int = 0,
-            *args, **kwargs
-        ) -> List[Dict]:
-            if "{page}" not in base_url:
-                raise ValueError("Base URL must include '{page}' placeholder. (EX: https://www.example.com?page={page})")
-            
-            result = []
-            for page_index in range(start_page, end_page+1):
-                url = base_url.format(page=page_index)
-                result.extend(self.fetch(url=url, crawler_schema=crawler_schema, headers=headers, *args, **kwargs))
-                time.sleep(interval_s)
-            
-            return result
+    """
+    A synchronous HTML crawler that extracts structured data from web pages
+    based on a provided CrawlerSchema.
 
-        
-    
+    Features:
+    - base_selector selects multiple parent elements (one record per parent)
+    - fields can extract text, numbers, or lists inside each parent element
+    - supports attributes, default values, and formatter callables
+    - supports nested schemas via `follow_schema`
+    """
+
+    def __init__(self, session: requests.Session | None = None) -> None:
+        self.session = session or requests.Session()
+
+    def fetch(self, url: str, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+        """
+        Fetches a page and extracts data according to the given schema.
+
+        Args:
+            url: URL to fetch.
+            schema: CrawlerSchema dict with base_selector and fields.
+            *args, **kwargs: Extra arguments passed to requests.get().
+
+        Returns:
+            List of dictionaries, one per parent element matched by base_selector.
+        """
+        response = self.session.get(url, *args, **kwargs)
+        response.raise_for_status()
+        tree = HTMLParser(response.text)
+
+        base_elements = tree.css(schema.get("base_selector", "body"))
+        fields: List[FieldSchema] = schema.get("fields", [])
+
+        records: List[Dict[str, Any]] = []
+
+        for parent in base_elements:
+            record: Dict[str, Any] = {}
+
+            for field in fields:
+                selector = field["selector"]
+                attr = field.get("attribute")
+                default = field.get("default")
+                type_ = field.get("type", "text")
+                formatter = field.get("formatter")
+                follow_schema = field.get("follow_schema")
+
+                # TYPE: list
+                if type_ == "list":
+                    values: List[Any] = []
+                    for el in parent.css(selector):
+                        if el is None:
+                            continue
+                        raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
+                        if not raw:
+                            raw = default
+                        elif formatter:
+                            raw = formatter(raw)
+                        values.append(raw)
+                    record[field["name"]] = values
+                    continue
+
+                # Singular value
+                el = parent.css_first(selector)
+                if not el:
+                    record[field["name"]] = default
+                    continue
+
+                raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
+                if raw is None:
+                    record[field["name"]] = default
+                    continue
+
+                # Type coercion
+                value: Any = raw
+                if type_ == "number":
+                    try:
+                        value = float(raw)
+                        if value.is_integer():
+                            value = int(value)
+                    except ValueError:
+                        value = default
+                elif type_ == "text":
+                    value = str(raw)
+                elif type_ == "json":
+                    value = json.loads(raw)
+
+                # Apply formatter
+                if formatter:
+                    value = formatter(value)
+
+
+                # Nested schema
+                if follow_schema and isinstance(value, str):
+                    nested = self.fetch(value, follow_schema, *args, **kwargs)
+                    if isinstance(nested, list):
+                        for item in nested:
+                            for key, val in item.items():
+                                record[key] = val
+                    else:
+                        for key, val in item.items():
+                            record[key] = val
+                    
+                else:
+                    record[field["name"]] = value
+            
+            records.append(record)
+
+        return records
+
+
 class AsyncHTTPCrawler:
-    def __init__(self):
+    """
+    Placeholder for asynchronous implementation.
+    Will likely use aiohttp + asyncio + selectolax.
+    """
+    def __init__(self) -> None:
         pass
 
-__all__ = [ "SyncHTTPCrawler", "AsyncHTTPCrawler" ]
+
+__all__ = ["SyncHTTPCrawler", "AsyncHTTPCrawler"]
