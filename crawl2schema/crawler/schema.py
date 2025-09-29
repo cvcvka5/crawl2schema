@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TypedDict, List, Callable, Optional, Any, Generic, TypeVar
+from typing import TypedDict, List, Callable, Optional, Any, Generic, TypeVar, Literal
 
 T = TypeVar("T")
 
@@ -16,7 +16,7 @@ class FieldSchema(Generic[T], TypedDict, total=False):
     selector: str
 
     # Python type used to cast the extracted value (e.g., str, int, float)
-    type: type[T]
+    type: Literal["text", "list", "number", "json"]
 
     # (Optional) Which HTML attribute to extract instead of inner text
     # Example: {"attribute": "href"} for links
