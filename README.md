@@ -43,12 +43,9 @@ schema = {
     ]
 }
 
-results = crawler.paginated_fetch(
-    base_url="https://www.example.com/products?page={page}",
-    start_page=1,
-    end_page=10,
-    interval_s=0.5,
-    crawler_schema=schema,
+results = crawler.fetch(
+    url="https://www.example.com/products",
+    schema=schema,
     headers={"User-Agent": "Mozilla/5.0"},
 )
 
