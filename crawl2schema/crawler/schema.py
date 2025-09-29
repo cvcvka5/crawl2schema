@@ -10,20 +10,20 @@ class FieldSchema(Generic[T], TypedDict, total=False):
     """
 
     # The key name for this field in the returned dictionary
-    name: str
+    name: Optional[str]
 
     # CSS selector used to find matching elements
     selector: str
 
     # Python type used to cast the extracted value (e.g., str, int, float)
-    type: Literal["text", "list", "number", "json"]
+    type: Optional[Literal["text", "list", "number", "json"]]
 
     # (Optional) Which HTML attribute to extract instead of inner text
     # Example: {"attribute": "href"} for links
-    attribute: str
+    attribute: Optional[str]
 
     # (Optional) Fallback value if nothing is found
-    default: Any
+    default: Optional[Any]
 
     # (Optional) A function to further process the extracted value
     # Example: lambda x: x.strip().lower()
@@ -31,7 +31,7 @@ class FieldSchema(Generic[T], TypedDict, total=False):
 
     # (Optional) Nested schema for following links and extracting more data
     # Example: Use this to crawl product detail pages
-    follow_schema: CrawlerSchema
+    follow_schema: Optional[CrawlerSchema]
 
 
 class CrawlerSchema(TypedDict, total=False):
