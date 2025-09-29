@@ -71,7 +71,8 @@ deep_crawler_schema: CrawlerSchema = {
         {"name": "href", "type": "text", "selector": "div.description > h3 > a", "attribute": "href", "formatter": lambda url: url.replace("https://web-scraping.dev", "")},
         {"name": "short_description", "type": "text", "selector": "div.short-description", "formatter": lambda desc: desc.strip().upper()[:30].strip()},
         {"name": "price", "type": "number", "selector": "div.price"},
-        {"name": "details", "type": "text", "selector": "div.description > h3 > a", "attribute": "href", "follow_schema": product_schema}
+        
+        {"type": "text", "selector": "div.description > h3 > a", "attribute": "href", "follow_schema": product_schema}
     ]
 }
 
