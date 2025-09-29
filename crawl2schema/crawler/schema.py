@@ -1,15 +1,48 @@
+from __future__ import annotations
 from typing import TypedDict, List, Callable, Optional, Any, Generic, TypeVar
 
 T = TypeVar("T")
 
-class ElementSchema(Generic[T], TypedDict):
-    name: str
-    selector: str
-    type: type[T]
-    attribute: Optional[str]
-    default: Optional[Any]
-    formatter: Optional[Callable[[T], Any]]
+class FieldSchema(Generic[T], TypedDict, total=False):
+    """
+    Defines how to extract a single piece of data from the HTML.
+    Each field is tied to a CSS selector, data type, and optional transformation logic.
+    """
 
-class CrawlerSchema(TypedDict):
-    baseSelector: str
-    targetElements: List[ElementSchema]
+    # The key name for this field in the returned dictionary
+    name: str
+
+    # CSS selector used to find matching elements
+    selector: str
+
+    # Python type used to cast the extracted value (e.g., str, int, float)
+    type: type[T]
+
+    # (Optional) Which HTML attribute to extract instead of inner text
+    # Example: {"attribute": "href"} for links
+    attribute: str
+
+    # (Optional) Fallback value if nothing is found
+    default: Any
+
+    # (Optional) A function to further process the extracted value
+    # Example: lambda x: x.strip().lower()
+    formatter: Callable[[T], Any]
+
+    # (Optional) Nested schema for following links and extracting more data
+    # Example: Use this to crawl product detail pages
+    follow_schema: CrawlerSchema
+
+
+class CrawlerSchema(TypedDict, total=False):
+    """
+    Defines how to crawl a web page.
+    Specifies a base container (CSS selector) and multiple fields to extract.
+    """
+
+    # The root CSS selector that contains all target elements (default: body)
+    base_selector: str
+
+    # List of fields to extract from the page
+    fields: List[FieldSchema]
+    
