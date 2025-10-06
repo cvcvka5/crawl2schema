@@ -78,7 +78,7 @@ deep_crawler_schema: CrawlerSchema = {
         {"name": "short_description", "type": "text", "selector": "div.short-description", "postformatter": lambda desc: desc.strip().upper()[:30].strip()},
         {"name": "price", "type": "number", "selector": "div.price"},
         
-        {"type": "text", "selector": "div.description > h3 > a", "attribute": "href", "follow_schema": product_schema}
+        {"type": "text", "selector": "div.description > h3 > a", "attribute": "href", "url_follow_schema": product_schema}
     ]
 }
 
