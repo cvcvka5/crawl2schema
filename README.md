@@ -3,7 +3,6 @@
     <br>
     Turn the web into structured data — effortlessly.
     <br>
-    <br>
     <img src="https://github.com/cvcvka5/crawl2schema/actions/workflows/python-tests.yml/badge.svg" alt="Python Tests" />
     <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" />
     <br>
