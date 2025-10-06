@@ -16,7 +16,6 @@ class SyncHTTPCrawler:
     - fields can extract text, numbers, or lists inside each parent element
     - supports attributes, default values, and formatter callables
     - supports nested schemas via `follow_schema`
-    - supports structured lists via `list_subfields` (list of objects)
     """
 
     def __init__(self, session: requests.Session | None = None) -> None:
@@ -40,14 +39,14 @@ class SyncHTTPCrawler:
         urls: list[str] = []
         if pagination is None:
             urls = [url]
-        elif pagination.get("page_placeholder"):  # only exists in URLPaginationSchema
+        elif pagination.get("page_placeholder"): # only exists in URLPaginationSchema
             pagination = schema["pagination"]
-            for page_n in range(pagination["start_page"], pagination["end_page"] + 1):
+            
+            for page_n in range(pagination["start_page"], pagination["end_page"]+1):
                 urls.append(url.replace(pagination["page_placeholder"], str(page_n)))
         else:
-            raise InvalidSchema(
-                f"Invalid pagination schema for SyncHTTPCrawler, allowed types are: {None} and {URLPaginationSchema}"
-            )
+            raise InvalidSchema(f"Invalid pagination schema for SyncHTTPCrawler, allowed types are: {None} and {URLPaginationSchema}")
+        
 
         records: List[Dict[str, Any]] = []
         for url in urls:
@@ -57,6 +56,8 @@ class SyncHTTPCrawler:
 
             base_elements = tree.css(schema.get("base_selector", "body"))
             fields: List[FieldSchema] = schema.get("fields", [])
+
+
 
             for parent in base_elements:
                 record: Dict[str, Any] = {}
@@ -69,74 +70,22 @@ class SyncHTTPCrawler:
                     formatter = field.get("formatter")
                     follow_schema = field.get("follow_schema")
 
-                    # --- TYPE: list ---
+                    # TYPE: list
                     if type_ == "list":
                         values: List[Any] = []
-                        list_subfields = field.get("list_subfields")
-
-                        # Find all elements for this list section
-                        list_base_elements = parent.css(selector)
-
-                        for el in list_base_elements:
-                            if list_subfields:
-                                # structured list of objects
-                                obj = {}
-                                for subfield in list_subfields:
-                                    subsel = subfield["selector"]
-                                    subattr = subfield.get("attribute")
-                                    subdefault = subfield.get("default")
-                                    subtype = subfield.get("type", "text")
-                                    subformatter = subfield.get("formatter")
-
-                                    subel = el.css_first(subsel)
-                                    if not subel:
-                                        obj[subfield["name"]] = subdefault
-                                        continue
-
-                                    subraw = (
-                                        subel.text(strip=True)
-                                        if not subattr
-                                        else subel.attributes.get(subattr, subdefault)
-                                    )
-                                    if subraw is None:
-                                        subraw = subdefault
-
-                                    # Type coercion for subfields
-                                    if subtype == "number":
-                                        try:
-                                            subraw = float(subraw)
-                                            if subraw.is_integer():
-                                                subraw = int(subraw)
-                                        except ValueError:
-                                            subraw = subdefault
-                                    elif subtype == "json":
-                                        try:
-                                            subraw = json.loads(subraw)
-                                        except json.JSONDecodeError:
-                                            subraw = subdefault
-
-                                    if subformatter:
-                                        subraw = subformatter(subraw)
-
-                                    obj[subfield["name"]] = subraw
-                                values.append(obj)
-                            else:
-                                # regular list of simple values
-                                raw = (
-                                    el.text(strip=True)
-                                    if not attr
-                                    else el.attributes.get(attr, default)
-                                )
-                                if not raw:
-                                    raw = default
-                                elif formatter:
-                                    raw = formatter(raw)
-                                values.append(raw)
-
+                        for el in parent.css(selector):
+                            if el is None:
+                                continue
+                            raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
+                            if not raw:
+                                raw = default
+                            elif formatter:
+                                raw = formatter(raw)
+                            values.append(raw)
                         record[field["name"]] = values
                         continue
 
-                    # --- TYPE: singular values ---
+                    # Singular value
                     el = parent.css_first(selector)
                     if not el:
                         record[field["name"]] = default
@@ -165,7 +114,8 @@ class SyncHTTPCrawler:
                     if formatter:
                         value = formatter(value)
 
-                    # Nested schema follow
+
+                    # Nested schema
                     if follow_schema and isinstance(value, str):
                         nested = self.fetch(value, follow_schema, *args, **kwargs)
                         if isinstance(nested, list):
@@ -173,11 +123,12 @@ class SyncHTTPCrawler:
                                 for key, val in item.items():
                                     record[key] = val
                         else:
-                            for key, val in nested.items():
+                            for key, val in item.items():
                                 record[key] = val
+                        
                     else:
                         record[field["name"]] = value
-
+                
                 records.append(record)
 
         return records
@@ -188,7 +139,6 @@ class AsyncHTTPCrawler:
     Placeholder for asynchronous implementation.
     Will likely use aiohttp + asyncio + selectolax.
     """
-
     def __init__(self) -> None:
         pass
 
