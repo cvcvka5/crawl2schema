@@ -18,6 +18,8 @@ class FieldSchema(Generic[T], TypedDict, total=False):
     # Python type used to cast the extracted value (e.g., str, int, float)
     type: Optional[Literal["text", "list", "number", "json"]]
 
+    list_subfields: Optional[List[FieldSchema]]
+
     # (Optional) Which HTML attribute to extract instead of inner text
     # Example: {"attribute": "href"} for links
     attribute: Optional[str]
