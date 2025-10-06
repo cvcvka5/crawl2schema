@@ -33,7 +33,7 @@ class FieldSchema(Generic[T], TypedDict, total=False):
 
     # (Optional) Nested schema for following links and extracting more data
     # Example: Use this to crawl product detail pages
-    follow_schema: Optional[CrawlerSchema]
+    url_follow_schema: Optional[CrawlerSchema]
 
 
 class URLPaginationSchema(TypedDict):
