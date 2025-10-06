@@ -15,7 +15,7 @@ class SyncHTTPCrawler:
     - base_selector selects multiple parent elements (one record per parent)
     - fields can extract text, numbers, or lists inside each parent element
     - supports attributes, default values, preformatter and postformatter callables
-    - supports nested schemas via `follow_schema`
+    - supports nested schemas via `url_follow_schema`
     - supports structured lists via `list_subfields` (list of objects)
     """
 
@@ -70,7 +70,7 @@ class SyncHTTPCrawler:
                     type_ = field.get("type", "text")
                     preformatter: Optional[Callable] = field.get("preformatter")
                     postformatter: Optional[Callable] = field.get("postformatter")
-                    follow_schema = field.get("follow_schema")
+                    url_follow_schema = field.get("url_follow_schema")
 
                     # --- TYPE: list ---
                     if type_ == "list":
@@ -186,8 +186,8 @@ class SyncHTTPCrawler:
                         value = postformatter(value)
 
                     # Follow nested schema
-                    if follow_schema and isinstance(value, str):
-                        nested = self.fetch(value, follow_schema, *args, **kwargs)
+                    if url_follow_schema and isinstance(value, str):
+                        nested = self.fetch(value, url_follow_schema, *args, **kwargs)
                         if isinstance(nested, list):
                             for item in nested:
                                 for k, v in item.items():
