@@ -46,9 +46,14 @@ def test_sync_shallow_httpcrawler():
         assert len(product["short_description"]) <= 30
 
 product_schema: CrawlerSchema = {
-    "base_selector": "script#reviews-data",
+    "base_selector": "body",
     "fields": [
-        {"name": "reviews", "type": "json", "selector": "*"}
+        {"name": "reviews", "type": "json", "selector": "script#reviews-data"},
+        {"name": "suggested", "type": "list", "selector": "div.similar-products > a.product-preview", "list_subfields": [
+            {"name": "name", "type": "text", "selector": "h3"},
+            {"name": "price", "type": "number", "selector": "div.price"},
+            {"name": "image", "type": "text", "attribute": "src", "selector": "img"},
+        ]}
     ]
 }
 
