@@ -1,25 +1,27 @@
 # Crawl2Schema
+
 [![Python Tests](https://github.com/cvcvka5/crawl2schema/actions/workflows/python-tests.yml/badge.svg)](https://github.com/cvcvka5/crawl2schema/actions/workflows/python-tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Crawl2Schema** is a Python web crawler that uses **schemas** to extract, format, and return structured data from websites. It’s designed to make web scraping more organized, reusable, and easy to manage.
+**Crawl2Schema** is a Python web crawler built to extract structured data from websites using **schemas**. It’s designed to turn chaotic web pages into clean, reusable data—fast. One man, one vision, building a tool that’s about to become essential for anyone doing serious web scraping.
 
 ---
 
 ## Features
 
-* **Schema-driven scraping**: Define a crawler schema with selectors, types, and formatter functions.
-* **Synchronous crawling**: Reliable and simple to use for single-page scrapes.
-* **Paginated crawling**: Crawl multiple pages by specifying a start and end page.
-* **Structured output**: Automatically returns data in a clean, structured format (list of dictionaries).
-* **Customizable formatting**: Apply functions to clean or transform extracted values.
+* **Schema-driven scraping:** Define exactly what you want to extract with CSS selectors, types, and formatter functions.
+* **Synchronous crawling:** Reliable, simple, and lightweight for most use cases.
+* **Paginated crawling:** Automatically iterate through multiple pages with flexible start/end settings.
+* **Nested data support:** Follow links and extract deeper content using nested schemas.
+* **Structured output:** Returns data as clean lists of dictionaries.
+* **Custom formatting:** Apply transformations to your data on the fly.
 
 ---
 
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/crawl2schema.git
+git clone https://github.com/cvcvka5/crawl2schema.git
 cd crawl2schema
 pip install -r requirements.txt
 ```
@@ -34,22 +36,74 @@ from crawl2schema.crawler.http import SyncHTTPCrawler
 crawler = SyncHTTPCrawler()
 
 schema = {
-    "baseSelector": "body",
-    "targetElements": [
-        {"name": "price", "selector": ".price", "type": float, "formatter": lambda price: round(price, 2)},
-        {"name": "name", "selector": ".product", "type": str, "default": "NO NAME"},
-        {"name": "description", "selector": "div.desc", "type": str, "default": None, "formatter": lambda desc: desc.lower()[:10]},
-        {"name": "href", "selector": "div > a", "type": str, "attribute": "href"},
+    "base_selector": "div.product",
+    "fields": [
+        {"name": "name", "selector": "h3 > a", "type": "text", "formatter": lambda x: x.strip().title()},
+        {"name": "price", "selector": ".price", "type": "number"},
+        {"name": "href", "selector": "h3 > a", "type": "text", "attribute": "href"},
+        {"name": "short_description", "selector": ".short-description", "type": "text", "formatter": lambda x: x[:50].strip()}
     ]
 }
 
 results = crawler.fetch(
-    url="https://www.example.com/products",
+    url="https://web-scraping.dev/products",
     schema=schema,
     headers={"User-Agent": "Mozilla/5.0"},
 )
 
-print(results)
+for product in results:
+    print(product)
+```
+
+**Example output:**
+
+```json
+[
+    {
+        "name": "Product One",
+        "price": 29.99,
+        "href": "/products/1",
+        "short_description": "This is a short description of product one."
+    },
+    {
+        "name": "Product Two",
+        "price": 39,
+        "href": "/products/2",
+        "short_description": "This is a short description of product two."
+    }
+]
+```
+
+---
+
+## Advanced Example: Nested Schema & Pagination
+
+```python
+from crawl2schema.crawler.http import SyncHTTPCrawler
+
+crawler = SyncHTTPCrawler()
+
+product_schema = {
+    "base_selector": "script#reviews-data",
+    "fields": [
+        {"name": "reviews", "type": "json", "selector": "*"}
+    ]
+}
+
+main_schema = {
+    "base_selector": "div.product",
+    "fields": [
+        {"name": "name", "selector": "h3 > a", "type": "text"},
+        {"name": "price", "selector": ".price", "type": "number"},
+        {"name": "href", "selector": "h3 > a", "type": "text", "attribute": "href", "follow_schema": product_schema},
+    ],
+    "pagination": {"start_page": 1, "end_page": 3, "page_placeholder": "{page}"}
+}
+
+data = crawler.fetch("https://web-scraping.dev/products?page={page}", main_schema)
+
+print(f"Total products fetched: {len(data)}")
+print(data[0])  # first product with nested reviews
 ```
 
 ---
@@ -60,30 +114,22 @@ print(results)
 python -m pytest -v
 ```
 
-## Feature Roadmap for Crawl2Schema
+---
 
-We should plan and implement additional features to make Crawl2Schema more powerful, flexible, and user-friendly. Proposed features include:
+## Roadmap
 
-### Core Features / Enhancements
+Crawl2Schema is just getting started. Here’s where it’s headed:
 
-- [ ] **Async Crawling:** Implement `AsyncHTTPCrawler` using `aiohttp` and `asyncio`.
-- [ ] **Advanced Pagination:** Support dynamic pagination (e.g., “next page” buttons) and custom pagination rules.
-- [ ] **URL Following / Crawling:** Follow links from a page using a schema field, with optional depth limits.
-- [ ] **Output Options:** Save results to JSON, CSV, SQLite, or Pandas DataFrame.
-- [ ] **Error Handling & Retry:** Retry failed requests with exponential backoff and log failures.
-- [ ] **Rate Limiting & Throttling:** Control request frequency and per-domain concurrency.
-- [ ] **Logging & Debugging:** Verbose mode and detailed logs for scraping steps.
-- [ ] **Schema Enhancements:** Nested schemas, conditional scraping, and pre-processing functions.
-- [ ] **Browser Support:** Add Playwright or Selenium crawler for JS-heavy pages.
-- [ ] **Testing & Validation:** Schema validation and unit tests with mock HTML pages.
-
-## Goal
-
-Prioritize and implement these features in stages to improve Crawl2Schema’s usability and reliability.
-
+* [ ] **Async crawling** with `aiohttp` for massive scraping tasks.
+* [ ] **Dynamic pagination** (next buttons, infinite scroll).
+* [ ] **Custom output** (JSON, CSV, SQLite, Pandas DataFrames).
+* [ ] **Retry & error handling** with exponential backoff.
+* [ ] **Rate limiting & throttling** to avoid bans.
+* [ ] **Browser crawling** for JS-heavy websites using Playwright/Selenium.
+* [ ] **Schema validation** and pre-processing hooks.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License © 2025
