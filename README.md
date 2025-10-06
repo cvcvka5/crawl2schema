@@ -14,7 +14,7 @@
 
 ## Features
 
-* **Schema-driven scraping:** Define exactly what you want to extract with CSS selectors, types, and formatter functions.
+* **Schema-driven scraping:** Define exactly what you want to extract with CSS selectors, types, postformatter/preformatter functions.
 * **Synchronous crawling:** Reliable, simple, and lightweight for most use cases.
 * **Paginated crawling:** Automatically iterate through multiple pages with flexible start/end settings.
 * **Nested data support:** Follow links and extract deeper content using nested schemas.
@@ -43,10 +43,10 @@ crawler = SyncHTTPCrawler()
 schema = {
     "base_selector": "div.product",
     "fields": [
-        {"name": "name", "selector": "h3 > a", "type": "text", "formatter": lambda x: x.strip().title()},
+        {"name": "name", "selector": "h3 > a", "type": "text", "postformatter": lambda x: x.strip().title()},
         {"name": "price", "selector": ".price", "type": "number"},
         {"name": "href", "selector": "h3 > a", "type": "text", "attribute": "href"},
-        {"name": "short_description", "selector": ".short-description", "type": "text", "formatter": lambda x: x[:50].strip()}
+        {"name": "short_description", "selector": ".short-description", "type": "text", "postformatter": lambda x: x[:50].strip()}
     ]
 }
 
@@ -105,7 +105,7 @@ main_schema = {
     "fields": [
         {"name": "name", "selector": "h3 > a", "type": "text"},
         {"name": "price", "selector": ".price", "type": "number"},
-        {"name": "href", "selector": "h3 > a", "type": "text", "attribute": "href", "follow_schema": product_schema},
+        {"name": "href", "selector": "h3 > a", "type": "text", "attribute": "href", "url_follow_schema": product_schema},
     ],
     "pagination": {"start_page": 1, "end_page": 3, "page_placeholder": "{page}"}
 }
