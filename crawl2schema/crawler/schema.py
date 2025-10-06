@@ -34,6 +34,14 @@ class FieldSchema(Generic[T], TypedDict, total=False):
     follow_schema: Optional[CrawlerSchema]
 
 
+class URLPaginationSchema(TypedDict):
+    end_page: int # inclusive
+    
+    interval: Optional[float] = 0
+    page_placeholder: Optional[str] = "{page}"
+    start_page: Optional[int] = 1
+
+
 class CrawlerSchema(TypedDict, total=False):
     """
     Defines how to crawl a web page.
@@ -42,6 +50,8 @@ class CrawlerSchema(TypedDict, total=False):
 
     # The root CSS selector that contains all target elements (default: body)
     base_selector: str
+
+    pagination: Optional[URLPaginationSchema] = None
 
     # List of fields to extract from the page
     fields: List[FieldSchema]
