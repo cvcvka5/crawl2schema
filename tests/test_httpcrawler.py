@@ -24,9 +24,9 @@ def test_webpage_live():
 shallow_crawler_schema: CrawlerSchema = {
     "base_selector": "div.product",
     "fields": [
-        {"name": "name", "type": "text", "selector": "div.description > h3 > a", "formatter": lambda name: name.strip().lower()},
-        {"name": "href", "type": "text", "selector": "div.description > h3 > a", "attribute": "href", "formatter": lambda url: url.replace("https://web-scraping.dev", "")},
-        {"name": "short_description", "type": "text", "selector": "div.short-description", "formatter": lambda desc: desc.strip().upper()[:30].strip()},
+        {"name": "name", "type": "text", "selector": "div.description > h3 > a", "postformatter": lambda name: name.strip().lower()},
+        {"name": "href", "type": "text", "selector": "div.description > h3 > a", "attribute": "href", "postformatter": lambda url: url.replace("https://web-scraping.dev", "")},
+        {"name": "short_description", "type": "text", "selector": "div.short-description", "postformatter": lambda desc: desc.strip().upper()[:30].strip()},
         {"name": "price", "type": "number", "selector": "div.price"},
     ]
 }
@@ -73,9 +73,9 @@ def test_sync_product_reviews():
 deep_crawler_schema: CrawlerSchema = {
     "base_selector": "div.product",
     "fields": [
-        {"name": "name", "type": "text", "selector": "div.description > h3 > a", "formatter": lambda name: name.strip().lower()},
-        {"name": "href", "type": "text", "selector": "div.description > h3 > a", "attribute": "href", "formatter": lambda url: url.replace("https://web-scraping.dev", "")},
-        {"name": "short_description", "type": "text", "selector": "div.short-description", "formatter": lambda desc: desc.strip().upper()[:30].strip()},
+        {"name": "name", "type": "text", "selector": "div.description > h3 > a", "postformatter": lambda name: name.strip().lower()},
+        {"name": "href", "type": "text", "selector": "div.description > h3 > a", "attribute": "href", "postformatter": lambda url: url.replace("https://web-scraping.dev", "")},
+        {"name": "short_description", "type": "text", "selector": "div.short-description", "postformatter": lambda desc: desc.strip().upper()[:30].strip()},
         {"name": "price", "type": "number", "selector": "div.price"},
         
         {"type": "text", "selector": "div.description > h3 > a", "attribute": "href", "follow_schema": product_schema}

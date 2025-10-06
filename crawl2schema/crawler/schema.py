@@ -27,9 +27,13 @@ class FieldSchema(Generic[T], TypedDict, total=False):
     # (Optional) Fallback value if nothing is found
     default: Optional[Any]
 
-    # (Optional) A function to further process the extracted value
+    # (Optional) A function to further process the extracted value (before type casting)
     # Example: lambda x: x.strip().lower()
-    formatter: Callable[[T], Any]
+    preformatter: Optional[Callable[[T], Any]]
+    
+    # (Optional) A function to further process the extracted value (before type casting)
+    # Example: lambda x: x.strip().lower()
+    postformatter: Optional[Callable[[T], Any]]
 
     # (Optional) Nested schema for following links and extracting more data
     # Example: Use this to crawl product detail pages
