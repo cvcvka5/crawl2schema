@@ -20,6 +20,7 @@ def test_webpage_live():
     assert requests.get(BASE_URL, headers=HEADERS).status_code == 200
     print("Webpage is LIVE.")
 
+
 shallow_crawler_schema: CrawlerSchema = {
     "base_selector": "div.product",
     "fields": [
