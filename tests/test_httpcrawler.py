@@ -60,9 +60,9 @@ def test_sync_product_reviews():
     print(data)
     
     assert len(data) > 0
-    for record in data:
-        assert "reviews" in record
-        assert isinstance(record["reviews"], list)
+    for product in data:
+        assert "reviews" in product
+        assert isinstance(product["reviews"], list)
 
 deep_crawler_schema: CrawlerSchema = {
     "base_selector": "div.product",
@@ -85,13 +85,67 @@ def test_sync_url_follow_httpcrawler():
     
     assert len(data) == 5
     for product in data:
+        assert all(field["name"] in product for field in shallow_crawler_schema["fields"])
+        assert None not in product.values()
+        assert len(product["short_description"]) <= 30
         assert "reviews" in product
         assert isinstance(product["reviews"], list)
 
+@as_new_section
+def test_sync_paginated_shallow_httpcrawler():
+    base_url = "https://web-scraping.dev/products?page={page_index}"
+    
+    shallow_paginated_crawler_schema = shallow_crawler_schema.copy()
+    shallow_paginated_crawler_schema["pagination"] = {
+        "page_placeholder": "{page_index}",
+        "start_page": 1,
+        "end_page": 5,
+        "interval": 1.0
+    }
+    
+    sync_crawler = SyncHTTPCrawler()
+    data = sync_crawler.fetch(url=base_url, schema=shallow_paginated_crawler_schema)
+    
+    print(data)
+    
+    assert len(data) == 25
+    for product in data:
+        assert all(field["name"] in product for field in shallow_crawler_schema["fields"])
+        assert None not in product.values()
+        assert len(product["short_description"]) <= 30
+        
+        
+@as_new_section
+def test_sync_paginated_url_follow_shallow_httpcrawler():
+    base_url = "https://web-scraping.dev/products?page={page_index}"
+    
+    deep_paginated_crawler_schema = deep_crawler_schema.copy()
+    deep_paginated_crawler_schema["pagination"] = {
+        "page_placeholder": "{page_index}",
+        "start_page": 1,
+        "end_page": 5,
+        "interval": 1.5
+    }
+    
+    sync_crawler = SyncHTTPCrawler()
+    data = sync_crawler.fetch(url=base_url, schema=deep_paginated_crawler_schema)
+    
+    print(data)
+    
+    assert len(data) == 25
+    for product in data:
+        assert "reviews" in product
+        assert isinstance(product["reviews"], list)
+        assert all(field["name"] in product for field in shallow_crawler_schema["fields"])
+        assert None not in product.values()
+        assert len(product["short_description"]) <= 30
+
+
 # Run all tests when executing directly
 if __name__ == "__main__":
-
     test_webpage_live()
     test_sync_shallow_httpcrawler()
     test_sync_product_reviews()
     test_sync_url_follow_httpcrawler()
+    test_sync_paginated_shallow_httpcrawler()
+    test_sync_paginated_url_follow_shallow_httpcrawler()
