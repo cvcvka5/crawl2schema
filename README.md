@@ -1,9 +1,15 @@
-# Crawl2Schema
-
-[![Python Tests](https://github.com/cvcvka5/crawl2schema/actions/workflows/python-tests.yml/badge.svg)](https://github.com/cvcvka5/crawl2schema/actions/workflows/python-tests.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-**Crawl2Schema** is a Python web crawler built to extract structured data from websites using **schemas**. It’s designed to turn chaotic web pages into clean, reusable data—fast. One man, one vision, building a tool that’s about to become essential for anyone doing serious web scraping.
+<p align="center" style="user-select: none;">
+    <img src="banner.svg" width="75%">
+    <br>
+    Turn the web into structured data — effortlessly.
+    <br>
+    <br>
+    <img src="https://github.com/cvcvka5/crawl2schema/actions/workflows/python-tests.yml/badge.svg" alt="Python Tests" />
+    <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" />
+    <br>
+    <br>
+    <strong>Crawl2Schema</strong> is a Python web crawler built to extract structured data from websites using <strong>schemas</strong>. It’s designed to turn chaotic web pages into clean, reusable data—fast. One man, one vision, building a tool that’s about to become essential for anyone doing serious web scraping.
+</p>
 
 ---
 
