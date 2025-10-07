@@ -1,9 +1,10 @@
 from typing import List, Dict, Any, Callable, Optional
-import requests
+import asyncio
+import aiohttp
+import json
+from selectolax.parser import HTMLParser
 from ..schema import CrawlerSchema, FieldSchema, URLPaginationSchema
 from ...exceptions import InvalidSchema
-from selectolax.parser import HTMLParser
-import json
 
 
 class SyncHTTPCrawler:
@@ -19,25 +20,14 @@ class SyncHTTPCrawler:
     - supports structured lists via `list_subfields` (list of objects)
     """
 
-    def __init__(self, session: Optional[requests.Session] = None) -> None:
+    def __init__(self, session: Optional[aiohttp.ClientSession] = None) -> None:
+        import requests
         self.session = session or requests.Session()
 
     def fetch(self, url: str, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
-        """
-        Fetches a page and extracts data according to the given schema.
-
-        Args:
-            url: URL to fetch.
-            schema: CrawlerSchema dict with base_selector and fields.
-            *args, **kwargs: Extra arguments passed to requests.get().
-
-        Returns:
-            List of dictionaries, one per parent element matched by base_selector.
-        """
-
         pagination = schema.get("pagination", None)
-
         urls: List[str] = []
+
         if pagination is None:
             urls = [url]
         elif pagination.get("page_placeholder"):
@@ -51,166 +41,264 @@ class SyncHTTPCrawler:
             )
 
         records: List[Dict[str, Any]] = []
-
         for url in urls:
             response = self.session.get(url, *args, **kwargs)
             response.raise_for_status()
             tree = HTMLParser(response.text)
-
-            base_elements = tree.css(schema.get("base_selector", "body"))
-            fields: List[FieldSchema] = schema.get("fields", [])
-
-            for parent in base_elements:
-                record: Dict[str, Any] = {}
-
-                for field in fields:
-                    selector = field["selector"]
-                    attr = field.get("attribute")
-                    default = field.get("default")
-                    type_ = field.get("type", "text")
-                    preformatter: Optional[Callable] = field.get("preformatter")
-                    postformatter: Optional[Callable] = field.get("postformatter")
-                    url_follow_schema = field.get("url_follow_schema")
-
-                    # --- TYPE: list ---
-                    if type_ == "list":
-                        values: List[Any] = []
-                        list_subfields = field.get("list_subfields")
-
-                        list_base_elements = parent.css(selector)
-
-                        for el in list_base_elements:
-                            if list_subfields:
-                                # structured list of objects
-                                obj: Dict[str, Any] = {}
-                                for subfield in list_subfields:
-                                    subsel = subfield["selector"]
-                                    subattr = subfield.get("attribute")
-                                    subdefault = subfield.get("default")
-                                    subtype = subfield.get("type", "text")
-                                    sub_pre = subfield.get("preformatter")
-                                    sub_post = subfield.get("postformatter")
-
-                                    subel = el.css_first(subsel)
-                                    subraw = subdefault
-                                    if subel:
-                                        subraw = subel.text(strip=True) if not subattr else subel.attributes.get(subattr, subdefault)
-
-                                    # Apply subfield preformatter
-                                    if sub_pre:
-                                        subraw = sub_pre(subraw)
-
-                                    # Type coercion
-                                    if subtype == "number":
-                                        try:
-                                            subraw = float(subraw)
-                                            if subraw.is_integer():
-                                                subraw = int(subraw)
-                                        except (ValueError, TypeError):
-                                            subraw = subdefault
-                                    elif subtype == "json":
-                                        try:
-                                            subraw = json.loads(subraw)
-                                        except (json.JSONDecodeError, TypeError):
-                                            subraw = subdefault
-                                    elif subtype == "text":
-                                        subraw = str(subraw) if subraw is not None else subdefault
-
-                                    # Apply subfield postformatter
-                                    if sub_post:
-                                        subraw = sub_post(subraw)
-
-                                    obj[subfield["name"]] = subraw
-                                values.append(obj)
-                            else:
-                                # simple list
-                                raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
-
-                                if preformatter:
-                                    raw = preformatter(raw)
-
-                                # Type coercion for simple list
-                                if type_ == "number":
-                                    try:
-                                        raw = float(raw)
-                                        if raw.is_integer():
-                                            raw = int(raw)
-                                    except (ValueError, TypeError):
-                                        raw = default
-                                elif type_ == "json":
-                                    try:
-                                        raw = json.loads(raw)
-                                    except (json.JSONDecodeError, TypeError):
-                                        raw = default
-                                elif type_ == "text":
-                                    raw = str(raw) if raw is not None else default
-
-                                if postformatter:
-                                    raw = postformatter(raw)
-
-                                values.append(raw)
-
-                        record[field["name"]] = values
-                        continue
-
-                    # --- TYPE: singular ---
-                    el = parent.css_first(selector)
-                    raw = default
-                    if el:
-                        raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
-
-                    value: Any = raw
-
-                    # Apply preformatter
-                    if preformatter:
-                        value = preformatter(value)
-
-                    # Type coercion
-                    if type_ == "number":
-                        try:
-                            value = float(value)
-                            if value.is_integer():
-                                value = int(value)
-                        except (ValueError, TypeError):
-                            value = default
-                    elif type_ == "json":
-                        try:
-                            value = json.loads(value)
-                        except (json.JSONDecodeError, TypeError):
-                            value = default
-                    elif type_ == "text":
-                        value = str(value) if value is not None else default
-
-                    # Apply postformatter
-                    if postformatter:
-                        value = postformatter(value)
-
-                    # Follow nested schema
-                    if url_follow_schema and isinstance(value, str):
-                        nested = self.fetch(value, url_follow_schema, *args, **kwargs)
-                        if isinstance(nested, list):
-                            for item in nested:
-                                for k, v in item.items():
-                                    record[k] = v
-                        else:
-                            for k, v in nested.items():
-                                record[k] = v
-                    else:
-                        record[field["name"]] = value
-
-                records.append(record)
-
+            records.extend(self._extract_from_tree(tree, schema, *args, **kwargs))
         return records
+
+    def _extract_from_tree(self, tree: HTMLParser, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+        base_elements = tree.css(schema.get("base_selector", "body"))
+        fields: List[FieldSchema] = schema.get("fields", [])
+        records: List[Dict[str, Any]] = []
+
+        for parent in base_elements:
+            record: Dict[str, Any] = {}
+            for field in fields:
+                selector = field["selector"]
+                attr = field.get("attribute")
+                default = field.get("default")
+                type_ = field.get("type", "text")
+                preformatter: Optional[Callable] = field.get("preformatter")
+                postformatter: Optional[Callable] = field.get("postformatter")
+                url_follow_schema = field.get("url_follow_schema")
+
+                if type_ == "list":
+                    record[field["name"]] = self._extract_list_field(parent, field)
+                    continue
+
+                el = parent.css_first(selector)
+                raw = default
+                if el:
+                    raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
+
+                value: Any = self._apply_formatters(raw, preformatter, postformatter, type_, default)
+
+                if url_follow_schema and isinstance(value, str):
+                    nested = self.fetch(value, url_follow_schema, *args, **kwargs)
+                    if isinstance(nested, list):
+                        for item in nested:
+                            record.update(item)
+                    else:
+                        record.update(nested)
+                else:
+                    record[field["name"]] = value
+            records.append(record)
+        return records
+
+    def _extract_list_field(self, parent, field: FieldSchema):
+        values: List[Any] = []
+        selector = field["selector"]
+        attr = field.get("attribute")
+        default = field.get("default")
+        type_ = field.get("type", "text")
+        preformatter = field.get("preformatter")
+        postformatter = field.get("postformatter")
+        list_subfields = field.get("list_subfields")
+
+        for el in parent.css(selector):
+            if list_subfields:
+                obj: Dict[str, Any] = {}
+                for subfield in list_subfields:
+                    subel = el.css_first(subfield["selector"])
+                    subattr = subfield.get("attribute")
+                    subdefault = subfield.get("default")
+                    subtype = subfield.get("type", "text")
+                    sub_pre = subfield.get("preformatter")
+                    sub_post = subfield.get("postformatter")
+
+                    subraw = subdefault
+                    if subel:
+                        subraw = subel.text(strip=True) if not subattr else subel.attributes.get(subattr, subdefault)
+                    subval = self._apply_formatters(subraw, sub_pre, sub_post, subtype, subdefault)
+                    obj[subfield["name"]] = subval
+                values.append(obj)
+            else:
+                raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
+                val = self._apply_formatters(raw, preformatter, postformatter, type_, default)
+                values.append(val)
+        return values
+
+    def _apply_formatters(self, value, pre, post, type_, default):
+        if pre:
+            value = pre(value)
+        try:
+            if type_ == "number":
+                value = float(value)
+                if value.is_integer():
+                    value = int(value)
+            elif type_ == "json":
+                value = json.loads(value)
+            elif type_ == "text":
+                value = str(value)
+        except Exception:
+            value = default
+        if post:
+            value = post(value)
+        return value
 
 
 class AsyncHTTPCrawler:
     """
-    Placeholder for asynchronous implementation.
-    Will likely use aiohttp + asyncio + selectolax.
+    Fully asynchronous HTML crawler.
+
+    Features:
+    - Supports text, number, json, list fields
+    - Handles attributes, default values, pre/postformatters
+    - Nested schemas via url_follow_schema
+    - Structured lists via list_subfields
+    - Pagination support
+    - Optional external session reuse
+    - Concurrency limit via semaphore
     """
 
-    def __init__(self) -> None:
-        pass
+    def __init__(
+        self,
+        session: Optional[aiohttp.ClientSession] = None,
+        max_concurrency: int = 10,
+        timeout: int = 20
+    ) -> None:
+        self.external_session = session
+        self.session: Optional[aiohttp.ClientSession] = session
+        self.semaphore = asyncio.Semaphore(max_concurrency)
+        self.timeout = aiohttp.ClientTimeout(total=timeout)
 
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self.session is None or self.session.closed:
+            connector = aiohttp.TCPConnector(limit_per_host=10, ssl=False)
+            self.session = aiohttp.ClientSession(connector=connector, timeout=self.timeout)
+        return self.session
+
+    async def close(self):
+        """Close session if it was internally created."""
+        if self.session and not self.session.closed and not self.external_session:
+            await self.session.close()
+
+    async def fetch(self, url: str, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+        """Fetch data from a URL or paginated URLs using the provided schema."""
+        pagination = schema.get("pagination")
+        urls: List[str] = []
+
+        if pagination is None:
+            urls = [url]
+        elif pagination.get("page_placeholder"):
+            start = pagination.get("start_page", 1)
+            end = pagination.get("end_page", 1)
+            placeholder = pagination.get("page_placeholder", "{page}")
+            urls = [url.replace(placeholder, str(i)) for i in range(start, end + 1)]
+        else:
+            raise InvalidSchema(
+                f"Invalid pagination schema for AsyncHTTPCrawler, allowed types: None and {URLPaginationSchema}"
+            )
+
+        session = await self._get_session()
+
+        tasks = [self._fetch_page(u, schema, *args, **kwargs) for u in urls]
+        results = await asyncio.gather(*tasks)
+        # Flatten the list of lists
+        return [r for sublist in results for r in sublist]
+
+    async def _fetch_page(self, url: str, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+        async with self.semaphore:
+            session = await self._get_session()
+            async with session.get(url, *args, **kwargs) as resp:
+                resp.raise_for_status()
+                html = await resp.text()
+                tree = HTMLParser(html)
+                return await self._extract_from_tree(tree, schema, *args, **kwargs)
+
+    async def _extract_from_tree(self, tree: HTMLParser, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+        base_elements = tree.css(schema.get("base_selector", "body"))
+        fields: List[FieldSchema] = schema.get("fields", [])
+        records: List[Dict[str, Any]] = []
+
+        for parent in base_elements:
+            record: Dict[str, Any] = {}
+            for field in fields:
+                selector = field.get("selector")
+                attr = field.get("attribute")
+                default = field.get("default")
+                type_ = field.get("type", "text")
+                preformatter: Optional[Callable] = field.get("preformatter")
+                postformatter: Optional[Callable] = field.get("postformatter")
+                url_follow_schema = field.get("url_follow_schema")
+
+                if type_ == "list":
+                    record[field["name"]] = await self._extract_list_field(parent, field, *args, **kwargs)
+                    continue
+
+                el = parent.css_first(selector) if selector else None
+                raw = default
+                if el:
+                    raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
+
+                value = self._apply_formatters(raw, preformatter, postformatter, type_, default)
+
+                # Nested fetch for url_follow_schema
+                if url_follow_schema and isinstance(value, str):
+                    nested = await self.fetch(value, url_follow_schema, *args, **kwargs)
+                    # merge nested keys into record
+                    if isinstance(nested, list):
+                        for item in nested:
+                            record.update(item)
+                    else:
+                        record.update(nested)
+                else:
+                    record[field["name"]] = value
+
+            records.append(record)
+        return records
+
+    async def _extract_list_field(self, parent, field: FieldSchema, *args, **kwargs) -> List[Any]:
+        values: List[Any] = []
+        selector = field.get("selector")
+        attr = field.get("attribute")
+        default = field.get("default")
+        type_ = field.get("type", "text")
+        preformatter = field.get("preformatter")
+        postformatter = field.get("postformatter")
+        list_subfields = field.get("list_subfields")
+
+        for el in parent.css(selector):
+            if list_subfields:
+                obj: Dict[str, Any] = {}
+                for subfield in list_subfields:
+                    subel = el.css_first(subfield["selector"])
+                    subattr = subfield.get("attribute")
+                    subdefault = subfield.get("default")
+                    subtype = subfield.get("type", "text")
+                    sub_pre = subfield.get("preformatter")
+                    sub_post = subfield.get("postformatter")
+
+                    subraw = subdefault
+                    if subel:
+                        subraw = subel.text(strip=True) if not subattr else subel.attributes.get(subattr, subdefault)
+                    subval = self._apply_formatters(subraw, sub_pre, sub_post, subtype, subdefault)
+                    obj[subfield["name"]] = subval
+                values.append(obj)
+            else:
+                raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
+                val = self._apply_formatters(raw, preformatter, postformatter, type_, default)
+                values.append(val)
+        return values
+
+    def _apply_formatters(self, value, pre, post, type_, default):
+        if pre:
+            value = pre(value)
+        try:
+            if type_ == "number":
+                value = float(value)
+                if value.is_integer():
+                    value = int(value)
+            elif type_ == "json":
+                value = json.loads(value)
+            elif type_ == "text":
+                value = str(value)
+        except Exception:
+            value = default
+        if post:
+            value = post(value)
+        return value
 
 __all__ = ["SyncHTTPCrawler", "AsyncHTTPCrawler"]
