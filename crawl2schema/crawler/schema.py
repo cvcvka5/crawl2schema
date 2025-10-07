@@ -57,8 +57,10 @@ class CrawlerSchema(TypedDict, total=False):
     # The root CSS selector that contains all target elements (default: body)
     base_selector: str
 
-    pagination: Optional[URLPaginationSchema] = None
-
     # List of fields to extract from the page
     fields: List[FieldSchema]
+    
+    # This is kept only so its more schema driven for SyncHTTPCrawler
+    # Instead its recommended to generate your own urls with a for loop.
+    pagination: Optional[URLPaginationSchema] = None 
     
