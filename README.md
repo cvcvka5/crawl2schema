@@ -34,7 +34,7 @@ pip install -r requirements.txt
 ---
 
 ## Synchronous Usage Example
-
+### Basic Sync Crawl
 ```python
 from crawl2schema.crawler.http import SyncHTTPCrawler
 
@@ -58,6 +58,59 @@ results = crawler.fetch(
 
 for product in results:
     print(product)
+```
+
+### Advanced Sync: URL-Following & Pagination
+
+```python
+from crawl2schema.crawler.http import SyncHTTPCrawler
+
+crawler = SyncHTTPCrawler()
+
+# Schema for the product page (nested URL following)
+product_schema = {
+    "base_selector": "body",
+    "fields": [
+        {"name": "reviews", "type": "json", "selector": "script#reviews-data"},
+        {"name": "suggested", "type": "list", "selector": "div.similar-products > a.product-preview", "list_subfields": [
+            {"name": "name", "type": "text", "selector": "h3"},
+            {"name": "price", "type": "number", "selector": "div.price"},
+            {"name": "image", "type": "text", "attribute": "src", "selector": "img"},
+        ]}
+    ]
+}
+
+# Main schema for product listings
+main_schema = {
+    "base_selector": "div.product",
+    "fields": [
+        {"name": "name", "selector": "h3 > a", "type": "text", "postformatter": lambda x: x.strip().title()},
+        {"name": "price", "selector": ".price", "type": "number"},
+        {"name": "href", "selector": "h3 > a", "type": "text", "attribute": "href",
+         "url_follow_schema": product_schema},  # follow link to fetch nested data
+        {"name": "short_description", "selector": ".short-description", "type": "text",
+         "postformatter": lambda x: x[:50].strip()}
+    ],
+    # Pagination: automatically generate URLs
+    "pagination": {
+        "page_placeholder": "{page}",
+        "start_page": 1,
+        "end_page": 3
+    }
+}
+
+# Fetch data from paginated product listings
+results = crawler.fetch(
+    url="https://web-scraping.dev/products?page={page}",
+    schema=main_schema,
+    headers={"User-Agent": "Mozilla/5.0"},
+)
+
+print(f"Total products fetched: {len(results)}\n")
+
+# Print first product including nested reviews
+from pprint import pprint
+pprint(results[0])
 ```
 
 ---
@@ -87,7 +140,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### Advanced Async: Concurrent & Paginated
+### Advanced Async: Concurrency & Pagination
 
 ```python
 import asyncio
