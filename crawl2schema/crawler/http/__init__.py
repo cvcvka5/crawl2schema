@@ -5,6 +5,7 @@ import json
 from selectolax.parser import HTMLParser
 from ..schema import CrawlerSchema, FieldSchema, URLPaginationSchema
 from ...exceptions import InvalidSchema
+import requests
 
 
 class SyncHTTPCrawler:
@@ -21,8 +22,9 @@ class SyncHTTPCrawler:
     """
 
     def __init__(self, session: Optional[aiohttp.ClientSession] = None) -> None:
-        import requests
         self.session = session or requests.Session()
+        self._close_session = False
+
 
     def fetch(self, url: str, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         pagination = schema.get("pagination", None)
@@ -138,6 +140,15 @@ class SyncHTTPCrawler:
             value = post(value)
         return value
 
+    def __enter__(self):
+        if self.session is None:
+            self.session = requests.Session()
+            self._close_session = True
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._close_session and self.session:
+            self.session.close()
 
 class AsyncHTTPCrawler:
     """
