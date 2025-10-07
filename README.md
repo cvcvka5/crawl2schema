@@ -33,7 +33,7 @@ pip install -r requirements.txt
 
 ---
 
-## Usage Example
+## Synchronous Usage Example
 
 ```python
 from crawl2schema.crawler.http import SyncHTTPCrawler
@@ -60,60 +60,67 @@ for product in results:
     print(product)
 ```
 
-**Example output:**
-
-```json
-[
-    {
-        "name": "Product One",
-        "price": 29.99,
-        "href": "/products/1",
-        "short_description": "This is a short description of product one."
-    },
-    {
-        "name": "Product Two",
-        "price": 39,
-        "href": "/products/2",
-        "short_description": "This is a short description of product two."
-    }
-]
-```
-
 ---
 
-## Advanced Example: Nested Schema & Pagination
+## Asynchronous Usage Example
+
+### Basic Async Crawl
 
 ```python
-from crawl2schema.crawler.http import SyncHTTPCrawler
+import asyncio
+from crawl2schema.crawler.http import AsyncHTTPCrawler
 
-crawler = SyncHTTPCrawler()
+async def main():
+    crawler = AsyncHTTPCrawler()
 
-product_schema = {
-    "base_selector": "body",
-    "fields": [
-        {"name": "reviews", "type": "json", "selector": "script#reviews-data"},
-        {"name": "suggested", "type": "list", "selector": "div.similar-products > a.product-preview", "list_subfields": [
-            {"name": "name", "type": "text", "selector": "h3"},
-            {"name": "price", "type": "number", "selector": "div.price"},
-            {"name": "image", "type": "text", "attribute": "src", "selector": "img"},
-        ]}
-    ]
-}
+    schema = {
+        "base_selector": "div.product",
+        "fields": [
+            {"name": "name", "selector": "h3 > a", "type": "text"},
+            {"name": "price", "selector": ".price", "type": "number"},
+        ]
+    }
 
-main_schema = {
-    "base_selector": "div.product",
-    "fields": [
-        {"name": "name", "selector": "h3 > a", "type": "text"},
-        {"name": "price", "selector": ".price", "type": "number"},
-        {"name": "href", "selector": "h3 > a", "type": "text", "attribute": "href", "url_follow_schema": product_schema},
-    ],
-    "pagination": {"start_page": 1, "end_page": 3, "page_placeholder": "{page}"}
-}
+    data = await crawler.fetch("https://web-scraping.dev/products", schema=schema)
+    print(data)
 
-data = crawler.fetch("https://web-scraping.dev/products?page={page}", main_schema)
+asyncio.run(main())
+```
 
-print(f"Total products fetched: {len(data)}")
-print(data[0])  # first product with nested reviews
+### Advanced Async: Concurrent & Paginated
+
+```python
+import asyncio
+from crawl2schema.crawler.http import AsyncHTTPCrawler
+
+async def main():
+    crawler = AsyncHTTPCrawler()
+
+    schema = {
+        "base_selector": "div.product",
+        "fields": [
+            {"name": "name", "selector": "h3 > a", "type": "text"},
+            {"name": "price", "selector": ".price", "type": "number"},
+        ]
+    }
+
+    # Its cleaner to generate the urls yourself instead of using the 'pagination' key in schema.
+    # The 'pagination' key exists only so URL pagination is more schematic durin sync crawling.
+    urls = [f"https://web-scraping.dev/products?page={i}" for i in range(1, 4)]
+
+    semaphore = asyncio.Semaphore(2)  # Limit concurrent requests
+
+    async def sem_fetch(url):
+        async with semaphore:
+            return await crawler.fetch(url, schema=schema)
+
+    tasks = [sem_fetch(url) for url in urls]
+    results = await asyncio.gather(*tasks)
+
+    total = sum(len(r) for r in results)
+    print(f"Total products fetched: {total}")
+
+asyncio.run(main())
 ```
 
 ---
@@ -123,20 +130,6 @@ print(data[0])  # first product with nested reviews
 ```bash
 python -m pytest -v
 ```
-
----
-
-## Roadmap
-
-Crawl2Schema is just getting started. Here’s where it’s headed:
-
-* [ ] **Async crawling** with `aiohttp` for massive scraping tasks.
-* [ ] **Dynamic pagination** (next buttons, infinite scroll).
-* [ ] **Custom output** (JSON, CSV, SQLite, Pandas DataFrames).
-* [ ] **Retry & error handling** with exponential backoff.
-* [ ] **Rate limiting & throttling** to avoid bans.
-* [ ] **Browser crawling** for JS-heavy websites using Playwright/Selenium.
-* [ ] **Schema validation** and pre-processing hooks.
 
 ---
 
