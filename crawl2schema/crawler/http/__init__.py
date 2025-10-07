@@ -300,5 +300,15 @@ class AsyncHTTPCrawler:
         if post:
             value = post(value)
         return value
+    
+    async def __aenter__(self):
+        if self.session is None:
+            self.session = aiohttp.ClientSession()
+            self._close_session = True
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self._close_session and self.session:
+            await self.session.close()
 
 __all__ = ["SyncHTTPCrawler", "AsyncHTTPCrawler"]
