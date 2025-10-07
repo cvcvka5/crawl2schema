@@ -42,9 +42,9 @@ class FieldSchema(Generic[T], TypedDict, total=False):
 
 class URLPaginationSchema(TypedDict):
     end_page: int # inclusive
+    page_placeholder: str
     
     interval: Optional[float] = 0
-    page_placeholder: Optional[str] = "{page}"
     start_page: Optional[int] = 1
 
 
