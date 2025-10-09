@@ -4,7 +4,7 @@ import aiohttp
 import json
 from selectolax.parser import HTMLParser
 from ..schema import CrawlerSchema, FieldSchema, URLPaginationSchema
-from ...exceptions import InvalidSchema
+from ...exceptions import InvalidSchema, CrawlerError, FormatterError, PaginationError, ParseError, RequestError
 import requests
 
 
@@ -25,18 +25,20 @@ class SyncHTTPCrawler:
         self.session = session or requests.Session()
         self._close_session = False
 
-
     def fetch(self, url: str, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         pagination = schema.get("pagination", None)
         urls: List[str] = []
 
         if pagination is None:
             urls = [url]
-        elif pagination.get("page_placeholder"):
-            start = pagination.get("start_page", 1)
-            end = pagination.get("end_page", 1)
-            placeholder = pagination.get("page_placeholder", "{page}")
-            urls = [url.replace(placeholder, str(i)) for i in range(start, end + 1)]
+        elif pagination.get("page_placeholder"): # must be an url paginator
+            try:
+                start = pagination.get("start_page", 1)
+                end = pagination.get("end_page", 1)
+                placeholder = pagination.get("page_placeholder", "{page}")
+                urls = [url.replace(placeholder, str(i)) for i in range(start, end + 1)]
+            except Exception as e:
+                raise PaginationError(f"Invalid pagination schema: {e}")
         else:
             raise InvalidSchema(
                 f"Invalid pagination schema for SyncHTTPCrawler, allowed types are: {None} and {URLPaginationSchema}"
@@ -44,21 +46,33 @@ class SyncHTTPCrawler:
 
         records: List[Dict[str, Any]] = []
         for url in urls:
-            response = self.session.get(url, *args, **kwargs)
-            response.raise_for_status()
-            tree = HTMLParser(response.text)
+            try:
+                response = self.session.get(url, *args, **kwargs)
+                response.raise_for_status()
+            except requests.RequestException as e:
+                raise RequestError(f"Failed to fetch {url}: {e}") from e
+
+            try:
+                tree = HTMLParser(response.text)
+            except Exception as e:
+                raise ParseError(f"Failed to parse HTML from {url}: {e}") from e
+
             records.extend(self._extract_from_tree(tree, schema, *args, **kwargs))
         return records
 
     def _extract_from_tree(self, tree: HTMLParser, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
-        base_elements = tree.css(schema.get("base_selector", "body"))
+        try:
+            base_elements = tree.css(schema.get("base_selector", "body"))
+        except Exception as e:
+            raise ParseError(f"Invalid base_selector '{schema.get('base_selector')}', error: {e}")
+
         fields: List[FieldSchema] = schema.get("fields", [])
         records: List[Dict[str, Any]] = []
 
         for parent in base_elements:
             record: Dict[str, Any] = {}
             for field in fields:
-                selector = field["selector"]
+                selector = field.get("selector")
                 attr = field.get("attribute")
                 default = field.get("default")
                 type_ = field.get("type", "text")
@@ -70,7 +84,11 @@ class SyncHTTPCrawler:
                     record[field["name"]] = self._extract_list_field(parent, field)
                     continue
 
-                el = parent.css_first(selector)
+                try:
+                    el = parent.css_first(selector) if selector else None
+                except Exception as e:
+                    raise ParseError(f"Invalid selector '{selector}' in field '{field.get('name')}': {e}")
+
                 raw = default
                 if el:
                     raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
@@ -78,12 +96,15 @@ class SyncHTTPCrawler:
                 value: Any = self._apply_formatters(raw, preformatter, postformatter, type_, default)
 
                 if url_follow_schema and isinstance(value, str):
-                    nested = self.fetch(value, url_follow_schema, *args, **kwargs)
-                    if isinstance(nested, list):
-                        for item in nested:
-                            record.update(item)
-                    else:
-                        record.update(nested)
+                    try:
+                        nested = self.fetch(value, url_follow_schema, *args, **kwargs)
+                        if isinstance(nested, list):
+                            for item in nested:
+                                record.update(item)
+                        else:
+                            record.update(nested)
+                    except Exception as e:
+                        raise CrawlerError(f"Nested fetch failed for {value}: {e}") from e
                 else:
                     record[field["name"]] = value
             records.append(record)
@@ -103,7 +124,11 @@ class SyncHTTPCrawler:
             if list_subfields:
                 obj: Dict[str, Any] = {}
                 for subfield in list_subfields:
-                    subel = el.css_first(subfield["selector"])
+                    try:
+                        subel = el.css_first(subfield["selector"])
+                    except Exception as e:
+                        raise ParseError(f"Invalid sub-selector '{subfield['selector']}' in list field '{field['name']}': {e}")
+
                     subattr = subfield.get("attribute")
                     subdefault = subfield.get("default")
                     subtype = subfield.get("type", "text")
@@ -124,7 +149,10 @@ class SyncHTTPCrawler:
 
     def _apply_formatters(self, value, pre, post, type_, default):
         if pre:
-            value = pre(value)
+            try:
+                value = pre(value)
+            except Exception as e:
+                raise FormatterError(f"Preformatter failed on value '{value}': {e}") from e
         try:
             if type_ == "number":
                 value = float(value)
@@ -134,10 +162,13 @@ class SyncHTTPCrawler:
                 value = json.loads(value)
             elif type_ == "text":
                 value = str(value)
-        except Exception:
-            value = default
+        except Exception as e:
+            raise FormatterError(f"Failed to cast '{value}' to {type_}: {e}") from e
         if post:
-            value = post(value)
+            try:
+                value = post(value)
+            except Exception as e:
+                raise FormatterError(f"Postformatter failed on value '{value}': {e}") from e
         return value
 
     def __enter__(self):
@@ -149,6 +180,7 @@ class SyncHTTPCrawler:
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self._close_session and self.session:
             self.session.close()
+
 
 class AsyncHTTPCrawler:
     """
@@ -194,33 +226,51 @@ class AsyncHTTPCrawler:
         if pagination is None:
             urls = [url]
         elif pagination.get("page_placeholder"):
-            start = pagination.get("start_page", 1)
-            end = pagination.get("end_page", 1)
-            placeholder = pagination.get("page_placeholder", "{page}")
-            urls = [url.replace(placeholder, str(i)) for i in range(start, end + 1)]
+            try:
+                start = pagination.get("start_page", 1)
+                end = pagination.get("end_page", 1)
+                placeholder = pagination.get("page_placeholder", "{page}")
+                urls = [url.replace(placeholder, str(i)) for i in range(start, end + 1)]
+            except Exception as e:
+                raise PaginationError(f"Invalid pagination schema: {e}")
         else:
             raise InvalidSchema(
                 f"Invalid pagination schema for AsyncHTTPCrawler, allowed types: None and {URLPaginationSchema}"
             )
 
         session = await self._get_session()
-
         tasks = [self._fetch_page(u, schema, *args, **kwargs) for u in urls]
-        results = await asyncio.gather(*tasks)
-        # Flatten the list of lists
+
+        try:
+            results = await asyncio.gather(*tasks)
+        except Exception as e:
+            raise RequestError(f"Async fetch failed: {e}") from e
+
         return [r for sublist in results for r in sublist]
 
     async def _fetch_page(self, url: str, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         async with self.semaphore:
             session = await self._get_session()
-            async with session.get(url, *args, **kwargs) as resp:
-                resp.raise_for_status()
-                html = await resp.text()
+            try:
+                async with session.get(url, *args, **kwargs) as resp:
+                    resp.raise_for_status()
+                    html = await resp.text()
+            except aiohttp.ClientError as e:
+                raise RequestError(f"Failed to fetch {url}: {e}") from e
+
+            try:
                 tree = HTMLParser(html)
-                return await self._extract_from_tree(tree, schema, *args, **kwargs)
+            except Exception as e:
+                raise ParseError(f"Failed to parse HTML from {url}: {e}") from e
+
+            return await self._extract_from_tree(tree, schema, *args, **kwargs)
 
     async def _extract_from_tree(self, tree: HTMLParser, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
-        base_elements = tree.css(schema.get("base_selector", "body"))
+        try:
+            base_elements = tree.css(schema.get("base_selector", "body"))
+        except Exception as e:
+            raise ParseError(f"Invalid base_selector '{schema.get('base_selector')}', error: {e}")
+
         fields: List[FieldSchema] = schema.get("fields", [])
         records: List[Dict[str, Any]] = []
 
@@ -239,22 +289,27 @@ class AsyncHTTPCrawler:
                     record[field["name"]] = await self._extract_list_field(parent, field, *args, **kwargs)
                     continue
 
-                el = parent.css_first(selector) if selector else None
+                try:
+                    el = parent.css_first(selector) if selector else None
+                except Exception as e:
+                    raise ParseError(f"Invalid selector '{selector}' in field '{field.get('name')}': {e}")
+
                 raw = default
                 if el:
                     raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
 
                 value = self._apply_formatters(raw, preformatter, postformatter, type_, default)
 
-                # Nested fetch for url_follow_schema
                 if url_follow_schema and isinstance(value, str):
-                    nested = await self.fetch(value, url_follow_schema, *args, **kwargs)
-                    # merge nested keys into record
-                    if isinstance(nested, list):
-                        for item in nested:
-                            record.update(item)
-                    else:
-                        record.update(nested)
+                    try:
+                        nested = await self.fetch(value, url_follow_schema, *args, **kwargs)
+                        if isinstance(nested, list):
+                            for item in nested:
+                                record.update(item)
+                        else:
+                            record.update(nested)
+                    except Exception as e:
+                        raise CrawlerError(f"Nested async fetch failed for {value}: {e}") from e
                 else:
                     record[field["name"]] = value
 
@@ -275,7 +330,11 @@ class AsyncHTTPCrawler:
             if list_subfields:
                 obj: Dict[str, Any] = {}
                 for subfield in list_subfields:
-                    subel = el.css_first(subfield["selector"])
+                    try:
+                        subel = el.css_first(subfield["selector"])
+                    except Exception as e:
+                        raise ParseError(f"Invalid sub-selector '{subfield['selector']}' in list field '{field['name']}': {e}")
+
                     subattr = subfield.get("attribute")
                     subdefault = subfield.get("default")
                     subtype = subfield.get("type", "text")
@@ -296,7 +355,10 @@ class AsyncHTTPCrawler:
 
     def _apply_formatters(self, value, pre, post, type_, default):
         if pre:
-            value = pre(value)
+            try:
+                value = pre(value)
+            except Exception as e:
+                raise FormatterError(f"Preformatter failed on value '{value}': {e}") from e
         try:
             if type_ == "number":
                 value = float(value)
@@ -306,12 +368,15 @@ class AsyncHTTPCrawler:
                 value = json.loads(value)
             elif type_ == "text":
                 value = str(value)
-        except Exception:
-            value = default
+        except Exception as e:
+            raise FormatterError(f"Failed to cast '{value}' to {type_}: {e}") from e
         if post:
-            value = post(value)
+            try:
+                value = post(value)
+            except Exception as e:
+                raise FormatterError(f"Postformatter failed on value '{value}': {e}") from e
         return value
-    
+
     async def __aenter__(self):
         if self.session is None:
             self.session = aiohttp.ClientSession()
@@ -319,7 +384,8 @@ class AsyncHTTPCrawler:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self._close_session and self.session:
+        if getattr(self, "_close_session", False) and self.session:
             await self.session.close()
+
 
 __all__ = ["SyncHTTPCrawler", "AsyncHTTPCrawler"]
