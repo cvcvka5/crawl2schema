@@ -1,18 +1,32 @@
 import pytest
 import requests
 from crawl2schema.crawler.http import SyncHTTPCrawler, CrawlerSchema
+from crawl2schema.exceptions import (
+    InvalidSchema,
+    RequestError,
+    ParseError,
+    FormatterError,
+    PaginationError,
+    CrawlerError
+)
 
 def as_new_section(func):
     def inner():
         print(f"\n\n---\t{func.__name__}\t---\n")
-        func()
+        try:
+            func()
+        except Exception as e:
+            print(f"[EXCEPTION] {type(e).__name__}: {e}")
+            raise
         print(f"\n---\tEND\t---")
     return inner
+
 
 BASE_URL = "https://web-scraping.dev/products"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 }
+
 
 @as_new_section
 def test_webpage_live():
@@ -31,19 +45,19 @@ shallow_crawler_schema: CrawlerSchema = {
     ]
 }
 
+
 @as_new_section
 def test_sync_shallow_httpcrawler():
     sync_crawler = SyncHTTPCrawler()
     products = sync_crawler.fetch(BASE_URL, schema=shallow_crawler_schema, headers=HEADERS)
-    
-    
+
     print(len(products), products)
-    
     assert len(products) == 5
     for product in products:
         assert all(field["name"] in product for field in shallow_crawler_schema["fields"])
         assert None not in product.values()
         assert len(product["short_description"]) <= 30
+
 
 product_schema: CrawlerSchema = {
     "base_selector": "body",
@@ -57,18 +71,19 @@ product_schema: CrawlerSchema = {
     ]
 }
 
+
 @as_new_section
 def test_sync_product_reviews():
     sync_crawler = SyncHTTPCrawler()
     product_url = f"{BASE_URL[:-1]}/5"
     data = sync_crawler.fetch(product_url, schema=product_schema, headers=HEADERS)
-    
+
     print(data)
-    
     assert len(data) > 0
     for product in data:
         assert "reviews" in product
         assert isinstance(product["reviews"], list)
+
 
 deep_crawler_schema: CrawlerSchema = {
     "base_selector": "div.product",
@@ -77,18 +92,17 @@ deep_crawler_schema: CrawlerSchema = {
         {"name": "href", "type": "text", "selector": "div.description > h3 > a", "attribute": "href", "postformatter": lambda url: url.replace("https://web-scraping.dev", "")},
         {"name": "short_description", "type": "text", "selector": "div.short-description", "postformatter": lambda desc: desc.strip().upper()[:30].strip()},
         {"name": "price", "type": "number", "selector": "div.price"},
-        
         {"type": "text", "selector": "div.description > h3 > a", "attribute": "href", "url_follow_schema": product_schema}
     ]
 }
+
 
 @as_new_section
 def test_sync_url_follow_httpcrawler():
     sync_crawler = SyncHTTPCrawler()
     data = sync_crawler.fetch(BASE_URL, schema=deep_crawler_schema, headers=HEADERS)
-    
+
     print(data)
-    
     assert len(data) == 5
     for product in data:
         assert all(field["name"] in product for field in shallow_crawler_schema["fields"])
@@ -97,10 +111,11 @@ def test_sync_url_follow_httpcrawler():
         assert "reviews" in product
         assert isinstance(product["reviews"], list)
 
+
 @as_new_section
 def test_sync_paginated_shallow_httpcrawler():
     base_url = "https://web-scraping.dev/products?page={page_index}"
-    
+
     shallow_paginated_crawler_schema = shallow_crawler_schema.copy()
     shallow_paginated_crawler_schema["pagination"] = {
         "page_placeholder": "{page_index}",
@@ -108,23 +123,22 @@ def test_sync_paginated_shallow_httpcrawler():
         "end_page": 5,
         "interval": 1.0
     }
-    
+
     sync_crawler = SyncHTTPCrawler()
     data = sync_crawler.fetch(url=base_url, schema=shallow_paginated_crawler_schema)
-    
+
     print(data)
-    
     assert len(data) == 25
     for product in data:
         assert all(field["name"] in product for field in shallow_crawler_schema["fields"])
         assert None not in product.values()
         assert len(product["short_description"]) <= 30
-        
-        
+
+
 @as_new_section
 def test_sync_paginated_url_follow_shallow_httpcrawler():
     base_url = "https://web-scraping.dev/products?page={page_index}"
-    
+
     deep_paginated_crawler_schema = deep_crawler_schema.copy()
     deep_paginated_crawler_schema["pagination"] = {
         "page_placeholder": "{page_index}",
@@ -132,12 +146,11 @@ def test_sync_paginated_url_follow_shallow_httpcrawler():
         "end_page": 5,
         "interval": 1.5
     }
-    
+
     sync_crawler = SyncHTTPCrawler()
     data = sync_crawler.fetch(url=base_url, schema=deep_paginated_crawler_schema)
-    
+
     print(data)
-    
     assert len(data) == 25
     for product in data:
         assert "reviews" in product
@@ -147,7 +160,88 @@ def test_sync_paginated_url_follow_shallow_httpcrawler():
         assert len(product["short_description"]) <= 30
 
 
-# Run all tests when executing directly
+# ─────────────────────────────────────────────────────────────
+#  Exception Tests
+# ─────────────────────────────────────────────────────────────
+
+@as_new_section
+def test_invalid_pagination_schema():
+    """Should raise InvalidSchema when pagination config is wrong."""
+    sync_crawler = SyncHTTPCrawler()
+    bad_schema = shallow_crawler_schema.copy()
+    bad_schema["pagination"] = {"invalid_key": True}
+
+    with pytest.raises(InvalidSchema):
+        sync_crawler.fetch("https://example.com", schema=bad_schema)
+
+
+@as_new_section
+def test_request_error():
+    """Should raise RequestError when a request fails (bad domain)."""
+    sync_crawler = SyncHTTPCrawler()
+    with pytest.raises(RequestError):
+        sync_crawler.fetch("https://definitelynotarealurl.abcxyz", schema=shallow_crawler_schema)
+
+
+@as_new_section
+def test_parse_error():
+    """Should raise ParseError when HTML cannot be parsed."""
+    sync_crawler = SyncHTTPCrawler()
+
+    with pytest.raises(ParseError):
+        # Simulate passing malformed HTML manually
+        sync_crawler._extract_from_tree("<html><div", schema=shallow_crawler_schema)  # malformed HTML
+
+
+@as_new_section
+def test_pagination_error():
+    """Should raise PaginationError for invalid pagination configuration."""
+    sync_crawler = SyncHTTPCrawler()
+    bad_pagination_schema = {
+        "base_selector": "div.product",
+        "fields": [{"name": "name", "type": "text", "selector": "h3"}],
+        "pagination": {
+            "page_placeholder": "{page}",  # okay
+            "start_page": "one",  # invalid type
+            "end_page": "five",   # invalid type
+        }
+    }
+
+    with pytest.raises(PaginationError):
+        sync_crawler.fetch(BASE_URL, schema=bad_pagination_schema)
+
+
+@as_new_section
+def test_invalid_type_casting():
+    """Should handle non-numeric values gracefully."""
+    sync_crawler = SyncHTTPCrawler()
+    broken_schema = {
+        "base_selector": "body",
+        "fields": [
+            {"name": "price", "type": "number", "selector": "div.nonexistent"}
+        ]
+    }
+
+    with pytest.raises(FormatterError):
+        sync_crawler.fetch("https://web-scraping.dev/product/1", schema=broken_schema)
+
+
+@as_new_section
+async def test_sync_crawler_error():
+    """Should raise CrawlerError on unexpected internal exception."""
+    crawler = SyncHTTPCrawler()
+    broken_schema = {
+        "base_selector": "body",
+        "fields": [{"name": "test", "type": "text", "selector": "body", "postformatter": "not_callable"}]
+    }
+
+    with pytest.raises(CrawlerError):
+        await crawler.fetch(BASE_URL, schema=broken_schema, headers=HEADERS)
+
+# ─────────────────────────────────────────────────────────────
+#  Manual Execution Entry Point
+# ─────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     test_webpage_live()
     test_sync_shallow_httpcrawler()
@@ -155,3 +249,10 @@ if __name__ == "__main__":
     test_sync_url_follow_httpcrawler()
     test_sync_paginated_shallow_httpcrawler()
     test_sync_paginated_url_follow_shallow_httpcrawler()
+    
+    test_invalid_pagination_schema()
+    test_request_error()
+    test_parse_error()
+    test_pagination_error()
+    test_invalid_type_casting()
+    test_sync_crawler_error()
