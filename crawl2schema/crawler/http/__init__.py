@@ -3,7 +3,7 @@ import asyncio
 import aiohttp
 import json
 from selectolax.parser import HTMLParser
-from ..schema import CrawlerSchema, FieldSchema, URLPaginationSchema
+from ..schema import HTTPCrawlerSchema, FieldSchema, URLPaginationSchema
 from ...exceptions import InvalidSchema, CrawlerError, FormatterError, PaginationError, ParseError, RequestError
 import requests
 
@@ -11,7 +11,7 @@ import requests
 class SyncHTTPCrawler:
     """
     A synchronous HTML crawler that extracts structured data from web pages
-    based on a provided CrawlerSchema.
+    based on HTTPCrawlerSchema.
 
     Features:
     - base_selector selects multiple parent elements (one record per parent)
@@ -25,24 +25,20 @@ class SyncHTTPCrawler:
         self.session = session or requests.Session()
         self._close_session = False
 
-    def fetch(self, url: str, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
-        pagination = schema.get("pagination", None)
+    def fetch(self, url: str, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+        pagination = schema.get("url_pagination", None)
         urls: List[str] = []
 
         if pagination is None:
             urls = [url]
-        elif pagination.get("page_placeholder"): # must be an url paginator
+        else:
             try:
                 start = pagination.get("start_page", 1)
-                end = pagination.get("end_page", 1)
+                end = pagination["end_page"]
                 placeholder = pagination.get("page_placeholder", "{page}")
                 urls = [url.replace(placeholder, str(i)) for i in range(start, end + 1)]
             except Exception as e:
                 raise PaginationError(f"Invalid pagination schema: {e}")
-        else:
-            raise InvalidSchema(
-                f"Invalid pagination schema for SyncHTTPCrawler, allowed types are: {None} and {URLPaginationSchema}"
-            )
 
         records: List[Dict[str, Any]] = []
         for url in urls:
@@ -60,7 +56,7 @@ class SyncHTTPCrawler:
             records.extend(self._extract_from_tree(tree, schema, *args, **kwargs))
         return records
 
-    def _extract_from_tree(self, tree: HTMLParser, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+    def _extract_from_tree(self, tree: HTMLParser, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         try:
             base_elements = tree.css(schema.get("base_selector", "body"))
         except Exception as e:
@@ -218,25 +214,22 @@ class AsyncHTTPCrawler:
         if self.session and not self.session.closed and not self.external_session:
             await self.session.close()
 
-    async def fetch(self, url: str, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+    async def fetch(self, url: str, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         """Fetch data from a URL or paginated URLs using the provided schema."""
-        pagination = schema.get("pagination")
+        pagination = schema.get("url_pagination")
         urls: List[str] = []
 
         if pagination is None:
             urls = [url]
-        elif pagination.get("page_placeholder"):
+        else:
             try:
                 start = pagination.get("start_page", 1)
-                end = pagination.get("end_page", 1)
+                end = pagination["end_page"]
                 placeholder = pagination.get("page_placeholder", "{page}")
                 urls = [url.replace(placeholder, str(i)) for i in range(start, end + 1)]
             except Exception as e:
                 raise PaginationError(f"Invalid pagination schema: {e}")
-        else:
-            raise InvalidSchema(
-                f"Invalid pagination schema for AsyncHTTPCrawler, allowed types: None and {URLPaginationSchema}"
-            )
+
 
         session = await self._get_session()
         tasks = [self._fetch_page(u, schema, *args, **kwargs) for u in urls]
@@ -248,7 +241,7 @@ class AsyncHTTPCrawler:
 
         return [r for sublist in results for r in sublist]
 
-    async def _fetch_page(self, url: str, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+    async def _fetch_page(self, url: str, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         async with self.semaphore:
             session = await self._get_session()
             try:
@@ -265,7 +258,7 @@ class AsyncHTTPCrawler:
 
             return await self._extract_from_tree(tree, schema, *args, **kwargs)
 
-    async def _extract_from_tree(self, tree: HTMLParser, schema: CrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+    async def _extract_from_tree(self, tree: HTMLParser, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         try:
             base_elements = tree.css(schema.get("base_selector", "body"))
         except Exception as e:
@@ -386,6 +379,3 @@ class AsyncHTTPCrawler:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if getattr(self, "_close_session", False) and self.session:
             await self.session.close()
-
-
-__all__ = ["SyncHTTPCrawler", "AsyncHTTPCrawler"]
