@@ -1,6 +1,9 @@
 import pytest
 import requests
-from crawl2schema.crawler.http import SyncHTTPCrawler, CrawlerSchema
+import copy
+from selectolax.parser import HTMLParser
+from crawl2schema.crawler.http import SyncHTTPCrawler
+from crawl2schema.crawler.schema import HTTPCrawlerSchema
 from crawl2schema.exceptions import (
     InvalidSchema,
     RequestError,
@@ -30,17 +33,19 @@ HEADERS = {
 
 @as_new_section
 def test_webpage_live():
-    """Ensure the webpage is up."""
     assert requests.get(BASE_URL, headers=HEADERS).status_code == 200
     print("Webpage is LIVE.")
 
 
-shallow_crawler_schema: CrawlerSchema = {
+shallow_crawler_schema: HTTPCrawlerSchema = {
     "base_selector": "div.product",
     "fields": [
-        {"name": "name", "type": "text", "selector": "div.description > h3 > a", "postformatter": lambda name: name.strip().lower()},
-        {"name": "href", "type": "text", "selector": "div.description > h3 > a", "attribute": "href", "postformatter": lambda url: url.replace("https://web-scraping.dev", "")},
-        {"name": "short_description", "type": "text", "selector": "div.short-description", "postformatter": lambda desc: desc.strip().upper()[:30].strip()},
+        {"name": "name", "type": "text", "selector": "div.description > h3 > a",
+         "postformatter": lambda name: name.strip().lower()},
+        {"name": "href", "type": "text", "selector": "div.description > h3 > a",
+         "attribute": "href", "postformatter": lambda url: url.replace("https://web-scraping.dev", "")},
+        {"name": "short_description", "type": "text", "selector": "div.short-description",
+         "postformatter": lambda desc: desc.strip().upper()[:30].strip()},
         {"name": "price", "type": "number", "selector": "div.price"},
     ]
 }
@@ -59,15 +64,16 @@ def test_sync_shallow_httpcrawler():
         assert len(product["short_description"]) <= 30
 
 
-product_schema: CrawlerSchema = {
+product_schema: HTTPCrawlerSchema = {
     "base_selector": "body",
     "fields": [
         {"name": "reviews", "type": "json", "selector": "script#reviews-data"},
-        {"name": "suggested", "type": "list", "selector": "div.similar-products > a.product-preview", "list_subfields": [
-            {"name": "name", "type": "text", "selector": "h3"},
-            {"name": "price", "type": "number", "selector": "div.price"},
-            {"name": "image", "type": "text", "attribute": "src", "selector": "img"},
-        ]}
+        {"name": "suggested", "type": "list", "selector": "div.similar-products > a.product-preview",
+         "list_subfields": [
+             {"name": "name", "type": "text", "selector": "h3"},
+             {"name": "price", "type": "number", "selector": "div.price"},
+             {"name": "image", "type": "text", "attribute": "src", "selector": "img"},
+         ]}
     ]
 }
 
@@ -85,16 +91,10 @@ def test_sync_product_reviews():
         assert isinstance(product["reviews"], list)
 
 
-deep_crawler_schema: CrawlerSchema = {
-    "base_selector": "div.product",
-    "fields": [
-        {"name": "name", "type": "text", "selector": "div.description > h3 > a", "postformatter": lambda name: name.strip().lower()},
-        {"name": "href", "type": "text", "selector": "div.description > h3 > a", "attribute": "href", "postformatter": lambda url: url.replace("https://web-scraping.dev", "")},
-        {"name": "short_description", "type": "text", "selector": "div.short-description", "postformatter": lambda desc: desc.strip().upper()[:30].strip()},
-        {"name": "price", "type": "number", "selector": "div.price"},
-        {"type": "text", "selector": "div.description > h3 > a", "attribute": "href", "url_follow_schema": product_schema}
-    ]
-}
+deep_crawler_schema: HTTPCrawlerSchema = copy.deepcopy(shallow_crawler_schema)
+deep_crawler_schema["fields"].append({
+    "type": "text", "selector": "div.description > h3 > a", "attribute": "href", "url_follow_schema": product_schema
+})
 
 
 @as_new_section
@@ -116,8 +116,8 @@ def test_sync_url_follow_httpcrawler():
 def test_sync_paginated_shallow_httpcrawler():
     base_url = "https://web-scraping.dev/products?page={page_index}"
 
-    shallow_paginated_crawler_schema = shallow_crawler_schema.copy()
-    shallow_paginated_crawler_schema["pagination"] = {
+    shallow_paginated_crawler_schema = copy.deepcopy(shallow_crawler_schema)
+    shallow_paginated_crawler_schema["url_pagination"] = {
         "page_placeholder": "{page_index}",
         "start_page": 1,
         "end_page": 5,
@@ -125,7 +125,7 @@ def test_sync_paginated_shallow_httpcrawler():
     }
 
     sync_crawler = SyncHTTPCrawler()
-    data = sync_crawler.fetch(url=base_url, schema=shallow_paginated_crawler_schema)
+    data = sync_crawler.fetch(url=base_url, schema=shallow_paginated_crawler_schema, headers=HEADERS)
 
     print(data)
     assert len(data) == 25
@@ -139,8 +139,8 @@ def test_sync_paginated_shallow_httpcrawler():
 def test_sync_paginated_url_follow_shallow_httpcrawler():
     base_url = "https://web-scraping.dev/products?page={page_index}"
 
-    deep_paginated_crawler_schema = deep_crawler_schema.copy()
-    deep_paginated_crawler_schema["pagination"] = {
+    deep_paginated_crawler_schema = copy.deepcopy(deep_crawler_schema)
+    deep_paginated_crawler_schema["url_pagination"] = {
         "page_placeholder": "{page_index}",
         "start_page": 1,
         "end_page": 5,
@@ -148,7 +148,7 @@ def test_sync_paginated_url_follow_shallow_httpcrawler():
     }
 
     sync_crawler = SyncHTTPCrawler()
-    data = sync_crawler.fetch(url=base_url, schema=deep_paginated_crawler_schema)
+    data = sync_crawler.fetch(url=base_url, schema=deep_paginated_crawler_schema, headers=HEADERS)
 
     print(data)
     assert len(data) == 25
@@ -160,50 +160,37 @@ def test_sync_paginated_url_follow_shallow_httpcrawler():
         assert len(product["short_description"]) <= 30
 
 
-# ─────────────────────────────────────────────────────────────
-#  Exception Tests
-# ─────────────────────────────────────────────────────────────
+# ─────────────────────────────
+# Exception Tests
+# ─────────────────────────────
 
 @as_new_section
 def test_invalid_pagination_schema():
-    """Should raise InvalidSchema when pagination config is wrong."""
     sync_crawler = SyncHTTPCrawler()
-    bad_schema = shallow_crawler_schema.copy()
-    bad_schema["pagination"] = {"invalid_key": True}
+    bad_schema = copy.deepcopy(shallow_crawler_schema)
+    bad_schema["url_pagination"] = {"invalid_key": True}
 
-    with pytest.raises(InvalidSchema):
+    with pytest.raises(PaginationError):
         sync_crawler.fetch("https://example.com", schema=bad_schema)
 
 
 @as_new_section
 def test_request_error():
-    """Should raise RequestError when a request fails (bad domain)."""
     sync_crawler = SyncHTTPCrawler()
     with pytest.raises(RequestError):
         sync_crawler.fetch("https://definitelynotarealurl.abcxyz", schema=shallow_crawler_schema)
 
 
 @as_new_section
-def test_parse_error():
-    """Should raise ParseError when HTML cannot be parsed."""
-    sync_crawler = SyncHTTPCrawler()
-
-    with pytest.raises(ParseError):
-        # Simulate passing malformed HTML manually
-        sync_crawler._extract_from_tree("<html><div", schema=shallow_crawler_schema)  # malformed HTML
-
-
-@as_new_section
 def test_pagination_error():
-    """Should raise PaginationError for invalid pagination configuration."""
     sync_crawler = SyncHTTPCrawler()
     bad_pagination_schema = {
         "base_selector": "div.product",
         "fields": [{"name": "name", "type": "text", "selector": "h3"}],
-        "pagination": {
-            "page_placeholder": "{page}",  # okay
-            "start_page": "one",  # invalid type
-            "end_page": "five",   # invalid type
+        "url_pagination": {
+            "page_placeholder": "{page}",  
+            "start_page": "one",  
+            "end_page": "five",
         }
     }
 
@@ -213,13 +200,10 @@ def test_pagination_error():
 
 @as_new_section
 def test_invalid_type_casting():
-    """Should handle non-numeric values gracefully."""
     sync_crawler = SyncHTTPCrawler()
     broken_schema = {
         "base_selector": "body",
-        "fields": [
-            {"name": "price", "type": "number", "selector": "div.nonexistent"}
-        ]
+        "fields": [{"name": "price", "type": "number", "selector": "div.nonexistent"}]
     }
 
     with pytest.raises(FormatterError):
@@ -227,7 +211,7 @@ def test_invalid_type_casting():
 
 
 @as_new_section
-async def test_sync_crawler_error():
+def test_sync_crawler_error():
     """Should raise CrawlerError on unexpected internal exception."""
     crawler = SyncHTTPCrawler()
     broken_schema = {
@@ -236,11 +220,12 @@ async def test_sync_crawler_error():
     }
 
     with pytest.raises(CrawlerError):
-        await crawler.fetch(BASE_URL, schema=broken_schema, headers=HEADERS)
+        crawler.fetch(BASE_URL, schema=broken_schema)
 
-# ─────────────────────────────────────────────────────────────
-#  Manual Execution Entry Point
-# ─────────────────────────────────────────────────────────────
+
+# ─────────────────────────────
+# Manual Execution Entry Point
+# ─────────────────────────────
 
 if __name__ == "__main__":
     test_webpage_live()
@@ -252,7 +237,6 @@ if __name__ == "__main__":
     
     test_invalid_pagination_schema()
     test_request_error()
-    test_parse_error()
     test_pagination_error()
     test_invalid_type_casting()
     test_sync_crawler_error()

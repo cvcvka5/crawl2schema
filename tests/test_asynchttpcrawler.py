@@ -1,7 +1,8 @@
 import asyncio
 import pytest
 import aiohttp
-from crawl2schema.crawler.http import AsyncHTTPCrawler, CrawlerSchema
+from crawl2schema.crawler.http import AsyncHTTPCrawler
+from crawl2schema.crawler.schema import HTTPCrawlerSchema
 from crawl2schema.exceptions import (
     RequestError,
     PaginationError,
@@ -22,7 +23,7 @@ HEADERS = {
 
 # --- Schemas ---
 
-async_shallow_crawler_schema: CrawlerSchema = {
+async_shallow_crawler_schema: HTTPCrawlerSchema = {
     "base_selector": "div.product",
     "fields": [
         {"name": "name", "type": "text", "selector": "div.description > h3 > a",
@@ -35,7 +36,7 @@ async_shallow_crawler_schema: CrawlerSchema = {
     ]
 }
 
-product_schema: CrawlerSchema = {
+product_schema: HTTPCrawlerSchema = {
     "base_selector": "body",
     "fields": [
         {"name": "reviews", "type": "json", "selector": "script#reviews-data"},
@@ -47,7 +48,7 @@ product_schema: CrawlerSchema = {
     ]
 }
 
-deep_async_crawler_schema: CrawlerSchema = {
+deep_async_crawler_schema: HTTPCrawlerSchema = {
     "base_selector": "div.product",
     "fields": [
         {"name": "name", "type": "text", "selector": "div.description > h3 > a",
@@ -112,7 +113,7 @@ async def test_async_url_follow_httpcrawler():
 async def test_async_paginated_shallow_httpcrawler():
     base_url = "https://web-scraping.dev/products?page={page_index}"
     shallow_paginated_schema = async_shallow_crawler_schema.copy()
-    shallow_paginated_schema["pagination"] = {
+    shallow_paginated_schema["url_pagination"] = {
         "page_placeholder": "{page_index}",
         "start_page": 1,
         "end_page": 5
@@ -132,7 +133,7 @@ async def test_async_paginated_shallow_httpcrawler():
 async def test_async_paginated_url_follow_httpcrawler():
     base_url = "https://web-scraping.dev/products?page={page_index}"
     deep_paginated_schema = deep_async_crawler_schema.copy()
-    deep_paginated_schema["pagination"] = {
+    deep_paginated_schema["url_pagination"] = {
         "page_placeholder": "{page_index}",
         "start_page": 1,
         "end_page": 5
@@ -189,17 +190,14 @@ async def test_async_semaphore_limited_fetch():
 
 @as_new_section
 async def test_async_request_error():
-    """Should raise RequestError for invalid/bad responses."""
     crawler = AsyncHTTPCrawler()
     bad_url = "https://httpbin.org/status/500"
 
     with pytest.raises(RequestError):
         await crawler.fetch(bad_url, schema=async_shallow_crawler_schema, headers=HEADERS)
 
-
 @as_new_section
 async def test_async_crawler_error():
-    """Should raise CrawlerError on unexpected internal exception."""
     crawler = AsyncHTTPCrawler()
     broken_schema = {
         "base_selector": "body",
@@ -209,17 +207,14 @@ async def test_async_crawler_error():
     with pytest.raises(CrawlerError):
         await crawler.fetch(BASE_URL, schema=broken_schema, headers=HEADERS)
 
-
 @as_new_section
 async def test_async_pagination_error():
-    """Should raise PaginationError for invalid pagination schema."""
     crawler = AsyncHTTPCrawler()
     bad_schema = async_shallow_crawler_schema.copy()
-    bad_schema["pagination"] = {
+    bad_schema["url_pagination"] = {
         "page_placeholder": "{page_index}",
         "start_page": 1,
         "end_page": "not-an-int",
-        "interval": 1.0
     }
 
     base_url = "https://web-scraping.dev/products?page={page_index}"
@@ -237,7 +232,7 @@ if __name__ == "__main__":
     test_async_paginated_url_follow_httpcrawler()
     test_async_multiple_concurrent_fetches()
     test_async_semaphore_limited_fetch()
-
+    
     test_async_request_error()
     test_async_crawler_error()
     test_async_pagination_error()
