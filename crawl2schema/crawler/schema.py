@@ -1,66 +1,86 @@
 from __future__ import annotations
-from typing import TypedDict, List, Callable, Optional, Any, Generic, TypeVar, Literal
+from typing import TypedDict, List, Callable, Any, Literal, Generic, TypeVar, Union
 
 T = TypeVar("T")
 
-class FieldSchema(Generic[T], TypedDict, total=False):
+
+# Field schema definition
+class FieldSchema(Generic[T], TypedDict, total=True):
     """
     Defines how to extract a single piece of data from the HTML.
-    Each field is tied to a CSS selector, data type, and optional transformation logic.
     """
-
-    # The key name for this field in the returned dictionary
-    name: Optional[str]
-
-    # CSS selector used to find matching elements
+    name: str
     selector: str
-
-    # Python type used to cast the extracted value (e.g., str, int, float)
-    type: Optional[Literal["text", "list", "number", "json"]]
-
-    list_subfields: Optional[List[FieldSchema]]
-
-    # (Optional) Which HTML attribute to extract instead of inner text
-    # Example: {"attribute": "href"} for links
-    attribute: Optional[str]
-
-    # (Optional) Fallback value if nothing is found
-    default: Optional[Any]
-
-    # (Optional) A function to further process the extracted value (before type casting)
-    # Example: lambda x: x.strip().lower()
-    preformatter: Optional[Callable[[T], Any]]
-    
-    # (Optional) A function to further process the extracted value (before type casting)
-    # Example: lambda x: x.strip().lower()
-    postformatter: Optional[Callable[[T], Any]]
-
-    # (Optional) Nested schema for following links and extracting more data
-    # Example: Use this to crawl product detail pages
-    url_follow_schema: Optional[CrawlerSchema]
+    type: Literal["text", "list", "number", "json", "undefined"]
+    attribute: str
+    default: Any
+    preformatter: Callable[[Any], Any]
+    postformatter: Callable[[Any], Any]
+    url_follow_schema: "BaseCrawlerSchema"
+    list_subfields: List["FieldSchema"]
 
 
-class URLPaginationSchema(TypedDict):
-    end_page: int # inclusive
+# Pagination Schemas
+class PaginationSchema(TypedDict, total=False):
+    """Base pagination schema."""
+    type: Literal["page", "scroll"]
+
+
+# ---- URL Pagination ----
+class URLPaginationSchema(PaginationSchema, total=False):
+    type: Literal["page"]
     page_placeholder: str
-    
-    interval: Optional[float] = 0
-    start_page: Optional[int] = 1
+    start_page: int
+    end_page: int
 
 
-class CrawlerSchema(TypedDict, total=False):
-    """
-    Defines how to crawl a web page.
-    Specifies a base container (CSS selector) and multiple fields to extract.
-    """
+# ---- Scroll Pagination ----
+class ScrollPaginationSchema(PaginationSchema, total=False):
+    type: Literal["scroll"]
+    stop_condition: Literal["count", "element", "no-new-elements"]
+    scroll_distance: int
+    scroll_delay: float
+    scroll_selector: str
 
-    # The root CSS selector that contains all target elements (default: body)
+
+class ScrollPaginationSchemaCount(ScrollPaginationSchema, total=True):
+    stop_condition: Literal["count"]
+    scroll_count: int
+
+
+class ScrollPaginationSchemaElement(ScrollPaginationSchema, total=True):
+    stop_condition: Literal["element"]
+    stop_selector: str
+
+
+class ScrollPaginationSchemaNoNewElements(ScrollPaginationSchema, total=True):
+    stop_condition: Literal["no-new-elements"]
+    retry_limit: int
+    retry_scroll_distance: int
+
+
+# Crawler Schemas
+class BaseCrawlerSchema(TypedDict, total=False):
+    """Common fields shared by all crawlers."""
     base_selector: str
-
-    # List of fields to extract from the page
     fields: List[FieldSchema]
-    
-    # This is kept only so its more schema driven for SyncHTTPCrawler
-    # Instead its recommended to generate your own urls with a for loop.
-    pagination: Optional[URLPaginationSchema] = None 
-    
+
+
+class HTTPCrawlerSchema(BaseCrawlerSchema, total=True):
+    """
+    Schema for HTTP-based crawlers (requests, aiohttp, etc.)
+    """
+    url_pagination: URLPaginationSchema
+
+
+class BrowserCrawlerSchema(BaseCrawlerSchema, total=True):
+    """
+    Schema for browser-based crawlers (Playwright, Selenium, etc.)
+    Supports both scroll and URL pagination.
+    """
+    scroll_pagination: Union[
+        ScrollPaginationSchemaCount,
+        ScrollPaginationSchemaElement,
+        ScrollPaginationSchemaNoNewElements
+    ]
+    url_pagination: URLPaginationSchema
