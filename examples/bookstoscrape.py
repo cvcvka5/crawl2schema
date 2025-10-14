@@ -1,5 +1,5 @@
 from crawl2schema.crawler.http import SyncHTTPCrawler
-from crawl2schema.crawler.schema import CrawlerSchema
+from crawl2schema.crawler.schema import HTTPCrawlerSchema
 import json
 
 def rating_formatter(rating):
@@ -11,7 +11,7 @@ def rating_formatter(rating):
 def price_preformatter(price_raw):
     return price_raw[2:]
 
-schema: CrawlerSchema = {
+schema: HTTPCrawlerSchema = {
     "base_selector": "section li[class^=col]",
     "fields": [
         { "name": "name", "selector": "h3 a", "type": "text", "attribute": "title"},
@@ -34,7 +34,7 @@ schema: CrawlerSchema = {
             ]
         }},
     ],
-    "pagination": {
+    "url_pagination": {
         "start_page": 1,
         "end_page": 5,
         "interval": 0,
@@ -48,6 +48,7 @@ crawler = SyncHTTPCrawler()
 print("[STARTING] Crawler started.")
 
 data = crawler.fetch(base_url, schema=schema)
+print(data)
 
 print("[DONE] Scraped", len(data), "books.")
 

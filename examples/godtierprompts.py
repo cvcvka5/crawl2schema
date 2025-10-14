@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime
 from crawl2schema.crawler.http import AsyncHTTPCrawler
-from crawl2schema.crawler.schema import CrawlerSchema
+from crawl2schema.crawler.schema import HTTPCrawlerSchema
 
 # -----------------------------
 # Helper formatters
@@ -20,7 +20,7 @@ def numberformatter(text: str) -> int:
 # -----------------------------
 # Crawler schema
 # -----------------------------
-schema: CrawlerSchema = {
+schema: HTTPCrawlerSchema = {
     "base_selector": "div.cursor-pointer",
     "fields": [
         {"name": "name", "selector": "h3", "postformatter": textcleaner},
