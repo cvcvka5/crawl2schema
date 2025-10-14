@@ -1,5 +1,5 @@
 import time
-from typing import List, Dict, Any, Callable, Optional
+from typing import List, Dict, Any
 from crawl2schema.crawler.schema import BrowserCrawlerSchema, URLPaginationSchema
 from crawl2schema.exceptions import RequestError, CrawlerError, FormatterError, ParseError
 from selectolax.parser import HTMLParser
@@ -8,9 +8,9 @@ from playwright.sync_api import sync_playwright
 
 class SyncBrowserCrawler:
     """
-    A synchronous browser-based crawler using Playwright.
-    Supports dynamic rendering, scroll-based pagination, URL-following, nested schemas,
-    list subfields, and full field extraction with formatters.
+    Synchronous browser-based crawler using Playwright.
+    Supports dynamic rendering, scroll-based pagination, URL-following,
+    nested schemas, list subfields, and full field extraction with formatters.
     """
 
     def __init__(self, headless: bool = True):
@@ -20,23 +20,22 @@ class SyncBrowserCrawler:
         self.page = self.context.new_page()
 
     def fetch(self, url: str, schema: BrowserCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+        # URL Pagination
+        if "url_pagination" in schema and schema["url_pagination"]:
+            return self._handle_url_pagination(url, schema)
+
         try:
-            
-            # URL Pagination
-            if "url_pagination" in schema and schema["url_pagination"]:
-                return self._handle_url_pagination(url, schema)
-            
             # Single-page extraction
             self.page.goto(url, *args, **kwargs)
-
-            # Scroll Pagination
-            if "scroll_pagination" in schema and schema["scroll_pagination"]:
-                self._handle_scroll_pagination(schema)
-
-            return self._extract_data(schema)
-
         except Exception as e:
             raise RequestError(f"Failed to crawl {url}: {e}")
+
+        # Scroll Pagination
+        if "scroll_pagination" in schema and schema["scroll_pagination"]:
+            self._handle_scroll_pagination(schema)
+
+        return self._extract_data(schema)
+
 
     # ---------------------------
     # Scroll Pagination
@@ -145,17 +144,28 @@ class SyncBrowserCrawler:
                     # Apply preformatter
                     if field.get("preformatter") and callable(field["preformatter"]):
                         raw = field["preformatter"](raw)
+                except Exception as e:
+                    raise CrawlerError(f"Failed to extract field {field.get('name')}: {e}")
 
-                    # Type conversion
-                    value = self._cast_type(raw, field.get("type", "text"))
+                # Type conversion
+                value = self._cast_type(raw, field.get("type", "text"))
 
+                try:
                     # Apply postformatter
                     if field.get("postformatter") and callable(field["postformatter"]):
                         value = field["postformatter"](value)
 
-                    # Nested URL-following
+                    # Nested URL-following: use a new page
                     if "url_follow_schema" in field and isinstance(value, str):
-                        nested_data = self.fetch(value, field["url_follow_schema"])
+                        nested_data = []
+                        nested_page = self.context.new_page()
+                        nested_crawler = SyncBrowserCrawler.__new__(SyncBrowserCrawler)
+                        nested_crawler.context = self.context
+                        nested_crawler.page = nested_page
+                        nested_crawler.playwright = self.playwright
+                        nested_data = nested_crawler.fetch(value, field["url_follow_schema"])
+                        nested_page.close()
+
                         if isinstance(nested_data, list):
                             for nd in nested_data:
                                 record.update(nd)
@@ -163,9 +173,10 @@ class SyncBrowserCrawler:
                             record.update(nested_data)
                     else:
                         record[field["name"]] = value
-
                 except Exception as e:
                     raise CrawlerError(f"Failed to extract field {field.get('name')}: {e}")
+                    
+
 
             results.append(record)
 
@@ -196,7 +207,23 @@ class SyncBrowserCrawler:
                     subval = self._cast_type(subraw, sub.get("type", "text"))
                     if sub.get("postformatter") and callable(sub["postformatter"]):
                         subval = sub["postformatter"](subval)
-                    obj[sub["name"]] = subval
+
+                    # Nested URL-following inside lists
+                    if "url_follow_schema" in sub and isinstance(subval, str):
+                        nested_page = self.context.new_page()
+                        nested_crawler = SyncBrowserCrawler.__new__(SyncBrowserCrawler)
+                        nested_crawler.context = self.context
+                        nested_crawler.page = nested_page
+                        nested_crawler.playwright = self.playwright
+                        nested_data = nested_crawler.fetch(subval, sub["url_follow_schema"])
+                        nested_page.close()
+                        if isinstance(nested_data, list):
+                            for nd in nested_data:
+                                obj.update(nd)
+                        else:
+                            obj.update(nested_data)
+                    else:
+                        obj[sub["name"]] = subval
                 values.append(obj)
             else:
                 raw = el.attributes.get(attr, default) if attr else el.text(strip=True)
