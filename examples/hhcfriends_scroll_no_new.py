@@ -15,7 +15,7 @@ def rating_to_number(text):
 
     return re.match(r"^(\d\.\d{1,2}) stars$", text).group(1)
 
-crawler = SyncBrowserCrawler(headless=True)
+crawler = SyncBrowserCrawler(headless=False)
 schema: BrowserCrawlerSchema = {
     'base_selector': "div.grid-product__content",
     "fields": [
@@ -29,9 +29,9 @@ schema: BrowserCrawlerSchema = {
     "scroll_pagination": {
         "type": "scroll",
         "stop_condition": "no-new-elements",
-        "scroll_distance": 1000,
+        "scroll_distance": 1200,
         "retry_limit": 5,
-        "scroll_delay": 4,
+        "scroll_delay": 3,
         "retry_scroll_distance": -100,
     }
 }
