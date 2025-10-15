@@ -39,43 +39,38 @@ class ScrollPaginationSchema(TypedDict, total=False):
     scroll_delay: float
     scroll_selector: str
 
-
-class ScrollPaginationSchemaCount(ScrollPaginationSchema, total=True):
-    stop_condition: Literal["count"]
+    # specific for count stop condition
     scroll_count: int
 
-
-class ScrollPaginationSchemaElement(ScrollPaginationSchema, total=True):
-    stop_condition: Literal["element"]
+    # specific for element stop condition
     stop_selector: str
 
-
-class ScrollPaginationSchemaNoNewElements(ScrollPaginationSchema, total=True):
-    stop_condition: Literal["no-new-elements"]
+    # specific for no-new-elements stop condition
     retry_limit: int
     retry_scroll_distance: int
 
 
+
 # ---- Button Pagination ----
 class ButtonPaginationSchema(TypedDict, total=False):
-    """
-    Pagination by clicking a "Load More" or "Next" button.
-    """
     stop_condition: Literal["count", "element", "no-button"]
-    button_selector: str  # The selector for the button to click
-    click_delay: float  # Delay after clicking to wait for content to load
-
-# Specific types for strict typing
-class ButtonPaginationSchemaCount(ButtonPaginationSchema, total=True):
-    stop_condition: Literal["count"]
-    click_count: int  # Max number of button clicks
-
-class ButtonPaginationSchemaElement(ButtonPaginationSchema, total=True):
-    stop_condition: Literal["element"]
-    stop_selector: str  # Stop when this element appears
-
-class ButtonPaginationSchemaNoButton(ButtonPaginationSchema, total=True):
-    stop_condition: Literal["no-button"]
+    button_selector: str
+    
+    # Scroll-like options (optional)
+    scroll_distance: int
+    scroll_delay: float
+    scroll_selector: str
+    
+    # Scroll stop conditions (optional)
+    scroll_count: int
+    stop_selector: str
+    
+    # Retry options for scroll
+    retry_limit: int
+    retry_scroll_distance: int
+    
+    # Button-specific
+    click_count: int
 
 
 # Crawler Schemas

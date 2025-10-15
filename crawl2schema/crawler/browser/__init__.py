@@ -114,6 +114,87 @@ class SyncBrowserCrawler:
         return results
 
     # ---------------------------
+    # Button Pagination
+    # ---------------------------
+    def _handle_button_pagination(self, schema: BrowserCrawlerSchema):
+        pagination = schema.get("button_pagination")
+        if not pagination:
+            return
+
+        # Scroll-like options (optional)
+        scroll_distance = pagination.get("scroll_distance", 0)
+        scroll_delay = pagination.get("scroll_delay", 1.5)
+        scroll_selector = pagination.get("scroll_selector", "window")
+        retry_limit = pagination.get("retry_limit", 3)
+        retry_scroll_distance = pagination.get("retry_scroll_distance", 0)
+
+        # Stop conditions
+        stop_condition = pagination.get("stop_condition", "no-button")
+        button_selector = pagination.get("button_selector")
+        base_selector = schema.get("base_selector")
+        total_scrolls = 0
+        previous_count = 0
+        retry_counter = 0
+        total_clicks = 0
+        max_clicks = pagination.get("click_count", 5) if stop_condition == "count" else None
+        stop_selector = pagination.get("stop_selector") if stop_condition == "element" else None
+
+        while True:
+            # Scroll first if scroll_distance > 0
+            if scroll_distance > 0:
+                if scroll_selector == "window":
+                    self.page.evaluate(f"window.scrollBy(0, {scroll_distance})")
+                else:
+                    self.page.locator(scroll_selector).evaluate(f"(el) => el.scrollBy(0, {scroll_distance})")
+                time.sleep(scroll_delay)
+                total_scrolls += 1
+
+            # Button check
+            button = self.page.locator(button_selector)
+            if button.count() == 0 or not button.first.is_visible():
+                # Retry scroll if no new elements
+                if retry_counter < retry_limit:
+                    retry_counter += 1
+                    if retry_scroll_distance != 0:
+                        if scroll_selector == "window":
+                            self.page.evaluate(f"window.scrollBy(0, {retry_scroll_distance})")
+                        else:
+                            self.page.locator(scroll_selector).evaluate(
+                                f"(el) => el.scrollBy(0, {retry_scroll_distance})"
+                            )
+                    time.sleep(scroll_delay)
+                    continue
+                elif stop_condition == "no-button":
+                    break
+                else:
+                    raise CrawlerError("Button to load more dynamic content not detected.")
+
+            # Click the button
+            button.first.click()
+            total_clicks += 1
+            time.sleep(scroll_delay)
+
+            # Get updated content
+            html = self.page.content()
+            tree = HTMLParser(html)
+            current_count = len(tree.css(base_selector)) if base_selector else 0
+
+            # Stop conditions
+            if stop_condition == "count" and total_clicks >= max_clicks:
+                break
+            elif stop_condition == "element" and stop_selector:
+                stop_elements = self.page.locator(stop_selector)
+                if stop_elements.count() > 0 and stop_elements.first.is_visible():
+                    break
+            # Scroll-like stop conditions
+            if "scroll_count" in pagination and total_scrolls >= pagination["scroll_count"]:
+                break
+            elif "stop_selector" in pagination and pagination["stop_selector"]:
+                if self.page.locator(pagination["stop_selector"]).count() > 0:
+                    break
+
+
+    # ---------------------------
     # Data Extraction
     # ---------------------------
     def _extract_data(self, schema: BrowserCrawlerSchema) -> List[Dict[str, Any]]:
