@@ -92,9 +92,6 @@ class BrowserCrawlerSchema(BaseCrawlerSchema, total=True):
     Schema for browser-based crawlers (Playwright, Selenium, etc.)
     Supports both scroll and URL pagination.
     """
-    scroll_pagination: Union[
-        ScrollPaginationSchemaCount,
-        ScrollPaginationSchemaElement,
-        ScrollPaginationSchemaNoNewElements
-    ]
+    scroll_pagination: ScrollPaginationSchema
+    button_pagination: ButtonPaginationSchema
     url_pagination: URLPaginationSchema
