@@ -33,8 +33,8 @@ pip install -r requirements.txt
 
 ---
 
-## Synchronous Usage Example
-### Basic Sync Crawl
+## Synchronous HTTP Usage Example
+### Basic
 ```python
 from crawl2schema.crawler.http import SyncHTTPCrawler
 
@@ -60,7 +60,7 @@ for product in results:
     print(product)
 ```
 
-### Advanced Sync: URL-Following & Pagination
+### Advanced: URL-Following & Pagination
 
 ```python
 from crawl2schema.crawler.http import SyncHTTPCrawler
@@ -92,7 +92,7 @@ main_schema = {
          "postformatter": lambda x: x[:50].strip()}
     ],
     # Pagination: automatically generate URLs
-    "pagination": {
+    "url_pagination": {
         "page_placeholder": "{page}",
         "start_page": 1,
         "end_page": 3
@@ -115,9 +115,8 @@ pprint(results[0])
 
 ---
 
-## Asynchronous Usage Example
-
-### Basic Async Crawl
+## Asynchronous HTTP Usage Example
+### Basic
 
 ```python
 import asyncio
@@ -140,7 +139,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### Advanced Async: Concurrency & Pagination
+### Advanced: Concurrency & Pagination
 
 ```python
 import asyncio
@@ -174,6 +173,114 @@ async def main():
     print(f"Total products fetched: {total}")
 
 asyncio.run(main())
+```
+
+## Sync Browser Usage Example
+### Basic
+```python
+from crawl2schema.crawler.browser import SyncBrowserCrawler
+from crawl2schema.crawler.schema import BrowserCrawlerSchema
+from pprint import pprint
+import re
+
+def clean_text(text):
+    return text.replace("\n", " ").strip()
+
+def price_to_number(text):
+    text = clean_text(text)
+    return re.sub(".*€", "", text.replace(",", "."))
+
+def rating_to_number(text):
+    text = clean_text(text)
+
+    return re.match(r"^(\d\.\d{1,2}) stars$", text).group(1)
+
+crawler = SyncBrowserCrawler(headless=True)
+schema: BrowserCrawlerSchema = {
+    'base_selector': "div.grid-product__content",
+    "fields": [
+        { "name": "title", "type": "text", "selector": "div.grid-product__title", "postformatter": clean_text },
+        { "name": "price", "type": "number", "selector": "div.grid-product__price", "preformatter": price_to_number },
+        { "name": "sold-out", "selector": "div.grid-product__tag--sold-out", "type": "undefined", "default": False, "preformatter": bool },
+        { "name": "rating", "selector": "span.jdgm-prev-badge__stars", "attribute": "aria-label", "type": "number", "preformatter": rating_to_number },
+        { "name": "img", "selector": "img", "attribute": "src", "type": "text", "postformatter": lambda txt: txt.strip("//").strip() },
+        { "name": "href", "selector": "a", "attribute": "href", "type": "text" }
+    ]
+}
+
+url = "https://www.hhcfriends.eu/collections/buy-10-oh-thc-vapes"
+data = crawler.fetch(url, schema=schema)
+```
+
+### Advanced: Pagionation with Button Clicking
+```python
+from crawl2schema.crawler.browser import SyncBrowserCrawler
+from crawl2schema.crawler.schema import BrowserCrawlerSchema
+
+crawler = SyncBrowserCrawler(headless=False)
+schema: BrowserCrawlerSchema = {
+    "base_selector": "div.review",
+    "fields": [
+        { "name": "text", "selector": "p", "type": "text", "preformatter": lambda text: text.replace("\n", "").strip() },
+        { "name": "date", "selector": "span[data-testid='review-date']", "type": "text" },
+        { "name": "rating", "selector": "span[data-testid='review-stars'] > svg", "type": "list", "list_formatter": len }
+    ],
+    "button_pagination": {
+        "button_selector": "button#page-load-more",
+        "stop_condition": "no-button",
+        "retry_limit": 3,
+        "retry_scroll_distance": -100,
+        "retry_delay": 2,
+        "cycle_delay": 1,
+        "scroll_distance": 9999
+    }
+}
+
+url = "https://web-scraping.dev/reviews"
+data = crawler.fetch(url, schema=schema, wait_until="networkidle")
+```
+
+### Advanced: Pagination with Conditional Infinite Scrolling
+```python
+from crawl2schema.crawler.browser import SyncBrowserCrawler
+from crawl2schema.crawler.schema import BrowserCrawlerSchema
+import re
+
+def clean_text(text):
+    return text.replace("\n", " ").strip()
+
+def price_to_number(text):
+    text = clean_text(text)
+    return re.sub(".*€", "", text.replace(",", "."))
+
+def rating_to_number(text):
+    text = clean_text(text)
+
+    return re.match(r"^(\d\.\d{1,2}) stars$", text).group(1)
+
+crawler = SyncBrowserCrawler(headless=True)
+schema: BrowserCrawlerSchema = {
+    'base_selector': "div.grid-product__content",
+    "fields": [
+        { "name": "title", "type": "text", "selector": "div.grid-product__title", "postformatter": clean_text },
+        { "name": "price", "type": "number", "selector": "div.grid-product__price", "preformatter": price_to_number },
+        { "name": "sold-out", "selector": "div.grid-product__tag--sold-out", "type": "undefined", "default": False, "preformatter": bool },
+        { "name": "rating", "selector": "span.jdgm-prev-badge__stars", "attribute": "aria-label", "type": "number", "preformatter": rating_to_number },
+        { "name": "img", "selector": "img", "attribute": "src", "type": "text", "postformatter": lambda txt: txt.strip("//").strip() },
+        { "name": "href", "selector": "a", "attribute": "href", "type": "text" }
+    ],
+    "scroll_pagination": {
+        "type": "scroll",
+        "stop_condition": "no-new-elements",
+        "scroll_distance": 1200,
+        "retry_limit": 5,
+        "scroll_delay": 3,
+        "retry_scroll_distance": -100,
+    }
+}
+
+url = "https://www.hhcfriends.eu/collections/bestseller-buy"
+data = crawler.fetch(url, schema=schema)
 ```
 
 ---
