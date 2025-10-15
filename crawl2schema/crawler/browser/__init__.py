@@ -80,7 +80,7 @@ class SyncBrowserCrawler:
             elif stop_condition == "no-new-elements":
                 if current_count == previous_count:
                     retry_counter += 1
-                    if retry_scroll_distance > 0:
+                    if retry_scroll_distance != 0:
                         if scroll_selector == "window":
                             self.page.evaluate(f"window.scrollBy(0, {retry_scroll_distance})")
                         else:
