@@ -33,6 +33,8 @@ class SyncBrowserCrawler:
         # Scroll Pagination
         if "scroll_pagination" in schema and schema["scroll_pagination"]:
             self._handle_scroll_pagination(schema)
+        elif "button_pagination" in schema and schema["button_pagination"]:
+            self._handle_button_pagination(schema)
 
         return self._extract_data(schema)
 
@@ -49,6 +51,7 @@ class SyncBrowserCrawler:
         base_selector = schema["base_selector"]
         retry_limit = pagination.get("retry_limit", 3)
         retry_scroll_distance = pagination.get("retry_scroll_distance", 0)
+        scroll_horizontal = pagination.get("scroll_horizontal", False)
 
         total_scrolls = 0
         previous_count = 0
@@ -57,9 +60,15 @@ class SyncBrowserCrawler:
         while True:
             # Scroll
             if scroll_selector == "window":
-                self.page.evaluate(f"window.scrollBy(0, {scroll_distance})")
+                if scroll_horizontal:
+                    self.page.evaluate(f"window.scrollBy({scroll_distance}, 0)")
+                else:
+                    self.page.evaluate(f"window.scrollBy(0, {scroll_distance})")
             else:
-                self.page.locator(scroll_selector).evaluate(f"(el) => el.scrollBy(0, {scroll_distance})")
+                if scroll_horizontal:
+                    self.page.locator(scroll_selector).evaluate(f"(el) => el.scrollBy({scroll_distance}, 0)")
+                else:
+                    self.page.locator(scroll_selector).evaluate(f"(el) => el.scrollBy(0, {scroll_distance})")
             time.sleep(scroll_delay)
             total_scrolls += 1
 
@@ -82,11 +91,19 @@ class SyncBrowserCrawler:
                     retry_counter += 1
                     if retry_scroll_distance != 0:
                         if scroll_selector == "window":
-                            self.page.evaluate(f"window.scrollBy(0, {retry_scroll_distance})")
+                            if scroll_horizontal:
+                                self.page.evaluate(f"window.scrollBy({retry_scroll_distance}, 0)")
+                            else:
+                                self.page.evaluate(f"window.scrollBy(0, {retry_scroll_distance})")
                         else:
-                            self.page.locator(scroll_selector).evaluate(
-                                f"(el) => el.scrollBy(0, {retry_scroll_distance})"
-                            )
+                            if scroll_horizontal:
+                                self.page.locator(scroll_selector).evaluate(
+                                    f"(el) => el.scrollBy({retry_scroll_distance}, 0)"
+                                )
+                            else:
+                                self.page.locator(scroll_selector).evaluate(
+                                    f"(el) => el.scrollBy(0, {retry_scroll_distance})"
+                                )
                     if retry_counter >= retry_limit:
                         break
                 else:
@@ -106,7 +123,7 @@ class SyncBrowserCrawler:
 
         for i in range(start, end + 1):
             page_url = url.replace(placeholder, str(i))
-            print(f"[BrowserCrawler] Fetching page {i}: {page_url}")
+
             self.page.goto(page_url, wait_until="networkidle")
             time.sleep(1.5)
             results.extend(self._extract_data(schema))
@@ -123,30 +140,38 @@ class SyncBrowserCrawler:
 
         # Scroll-like options (optional)
         scroll_distance = pagination.get("scroll_distance", 0)
-        scroll_delay = pagination.get("scroll_delay", 1.5)
+        cycle_delay = pagination.get("cycle_delay", 1.5)
+        retry_delay = pagination.get("retry_delay", 2)
         scroll_selector = pagination.get("scroll_selector", "window")
         retry_limit = pagination.get("retry_limit", 3)
         retry_scroll_distance = pagination.get("retry_scroll_distance", 0)
+        scroll_horizontal = pagination.get("scroll_horizontal", False)
+        
 
         # Stop conditions
         stop_condition = pagination.get("stop_condition", "no-button")
         button_selector = pagination.get("button_selector")
         base_selector = schema.get("base_selector")
         total_scrolls = 0
-        previous_count = 0
         retry_counter = 0
         total_clicks = 0
         max_clicks = pagination.get("click_count", 5) if stop_condition == "count" else None
         stop_selector = pagination.get("stop_selector") if stop_condition == "element" else None
 
         while True:
-            # Scroll first if scroll_distance > 0
-            if scroll_distance > 0:
+            # Scroll first if scroll_distance != 0
+            if scroll_distance != 0:
                 if scroll_selector == "window":
-                    self.page.evaluate(f"window.scrollBy(0, {scroll_distance})")
+                    if scroll_horizontal:
+                        self.page.evaluate(f"window.scrollBy({scroll_distance}, 0)")
+                    else:
+                        self.page.evaluate(f"window.scrollBy(0, {scroll_distance})")
                 else:
-                    self.page.locator(scroll_selector).evaluate(f"(el) => el.scrollBy(0, {scroll_distance})")
-                time.sleep(scroll_delay)
+                    if scroll_horizontal:
+                        self.page.locator(scroll_selector).evaluate(f"(el) => el.scrollBy({scroll_distance}, 0)")
+                    else:
+                        self.page.locator(scroll_selector).evaluate(f"(el) => el.scrollBy(0, {scroll_distance})")
+                time.sleep(cycle_delay)
                 total_scrolls += 1
 
             # Button check
@@ -157,12 +182,21 @@ class SyncBrowserCrawler:
                     retry_counter += 1
                     if retry_scroll_distance != 0:
                         if scroll_selector == "window":
-                            self.page.evaluate(f"window.scrollBy(0, {retry_scroll_distance})")
+                            if scroll_horizontal:
+                                self.page.evaluate(f"window.scrollBy({retry_scroll_distance}, 0)")
+                            else:
+                                self.page.evaluate(f"window.scrollBy(0, {retry_scroll_distance})")
                         else:
-                            self.page.locator(scroll_selector).evaluate(
-                                f"(el) => el.scrollBy(0, {retry_scroll_distance})"
-                            )
-                    time.sleep(scroll_delay)
+                            if scroll_horizontal:
+                                self.page.locator(scroll_selector).evaluate(
+                                    f"(el) => el.scrollBy({retry_scroll_distance}, 0)"
+                                )
+                            else:
+                                self.page.locator(scroll_selector).evaluate(
+                                    f"(el) => el.scrollBy(0, {retry_scroll_distance})"
+                                )
+
+                    time.sleep(retry_delay)
                     continue
                 elif stop_condition == "no-button":
                     break
@@ -172,12 +206,11 @@ class SyncBrowserCrawler:
             # Click the button
             button.first.click()
             total_clicks += 1
-            time.sleep(scroll_delay)
+            time.sleep(cycle_delay)
 
             # Get updated content
             html = self.page.content()
             tree = HTMLParser(html)
-            current_count = len(tree.css(base_selector)) if base_selector else 0
 
             # Stop conditions
             if stop_condition == "count" and total_clicks >= max_clicks:

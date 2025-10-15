@@ -38,6 +38,7 @@ class ScrollPaginationSchema(TypedDict, total=False):
     scroll_distance: int
     scroll_delay: float
     scroll_selector: str
+    scroll_horizontal: bool
 
     # specific for count stop condition
     scroll_count: int
@@ -58,14 +59,16 @@ class ButtonPaginationSchema(TypedDict, total=False):
     
     # Scroll-like options (optional)
     scroll_distance: int
-    scroll_delay: float
     scroll_selector: str
+    cycle_delay: float
+    scroll_horizontal: bool
     
     # Scroll stop conditions (optional)
     scroll_count: int
     stop_selector: str
     
     # Retry options for scroll
+    retry_delay: float
     retry_limit: int
     retry_scroll_distance: int
     
