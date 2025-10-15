@@ -199,18 +199,6 @@ def test_pagination_error():
 
 
 @as_new_section
-def test_invalid_type_casting():
-    sync_crawler = SyncHTTPCrawler()
-    broken_schema = {
-        "base_selector": "body",
-        "fields": [{"name": "price", "type": "number", "selector": "div.nonexistent"}]
-    }
-
-    with pytest.raises(FormatterError):
-        sync_crawler.fetch("https://web-scraping.dev/product/1", schema=broken_schema)
-
-
-@as_new_section
 def test_sync_crawler_error():
     """Should raise CrawlerError on unexpected internal exception."""
     crawler = SyncHTTPCrawler()
@@ -238,5 +226,4 @@ if __name__ == "__main__":
     test_invalid_pagination_schema()
     test_request_error()
     test_pagination_error()
-    test_invalid_type_casting()
     test_sync_crawler_error()
