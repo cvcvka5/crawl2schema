@@ -156,8 +156,8 @@ async def main():
         ]
     }
 
-    # Its cleaner to generate the urls yourself instead of using the 'pagination' key in schema.
-    # The 'pagination' key exists only so URL pagination is more schematic durin sync crawling.
+    # Its cleaner to generate the urls yourself instead of using the 'url_pagination' key in schema.
+    # The 'url_pagination' key exists only so URL pagination is more schematic during sync crawling.
     urls = [f"https://web-scraping.dev/products?page={i}" for i in range(1, 4)]
 
     semaphore = asyncio.Semaphore(2)  # Limit concurrent requests
