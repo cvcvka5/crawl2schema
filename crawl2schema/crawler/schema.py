@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TypedDict, List, Callable, Any, Literal, Generic, TypeVar, Union
+from typing import TypedDict, List, Callable, Any, Literal, Generic, TypeVar, Tuple
 
 T = TypeVar("T")
 
@@ -90,11 +90,19 @@ class HTTPCrawlerSchema(BaseCrawlerSchema, total=True):
     url_pagination: URLPaginationSchema
 
 
+class WaitForSelectorArgs(TypedDict, total=False):
+    selector: str
+    timeout: float
+    state: Literal["attached", "detached", "hidden", "visible"]
+    strict: bool
+
 class BrowserCrawlerSchema(BaseCrawlerSchema, total=True):
     """
     Schema for browser-based crawlers (Playwright, Selenium, etc.)
     Supports both scroll and URL pagination.
     """
+    wait_for_selector: WaitForSelectorArgs
+    
     scroll_pagination: ScrollPaginationSchema
     button_pagination: ButtonPaginationSchema
     url_pagination: URLPaginationSchema

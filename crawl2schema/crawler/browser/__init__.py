@@ -22,11 +22,15 @@ class SyncBrowserCrawler:
     def fetch(self, url: str, schema: BrowserCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         # URL Pagination
         if "url_pagination" in schema and schema["url_pagination"]:
-            return self._handle_url_pagination(url, schema)
+            return self._handle_url_pagination(url, schema=schema, *args, **kwargs)
 
-        try:
+        try:            
             # Single-page extraction
             self.page.goto(url, *args, **kwargs)
+
+            wait_for_selector = schema.get("wait_for_selector")
+            if wait_for_selector:
+                self.page.wait_for_selector(**wait_for_selector)
         except Exception as e:
             raise RequestError(f"Failed to crawl {url}: {e}")
 
@@ -113,19 +117,24 @@ class SyncBrowserCrawler:
     # ---------------------------
     # URL Pagination
     # ---------------------------
-    def _handle_url_pagination(self, url: str, schema: BrowserCrawlerSchema) -> List[Dict[str, Any]]:
+    def _handle_url_pagination(self, url: str, schema: BrowserCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         pagination: URLPaginationSchema = schema["url_pagination"]
         results: List[Dict[str, Any]] = []
 
         start = pagination.get("start_page", 1)
         end = pagination.get("end_page", 1)
         placeholder = pagination.get("page_placeholder", "{page}")
-
+        wait_for_selector = schema.get("wait_for_selector")
+        
         for i in range(start, end + 1):
             page_url = url.replace(placeholder, str(i))
 
-            self.page.goto(page_url, wait_until="networkidle")
-            time.sleep(1.5)
+            self.page.goto(page_url, *args, **kwargs)
+            
+            if wait_for_selector:
+                self.page.wait_for_selector(**wait_for_selector)
+            
+            time.sleep(1.5) # TODO check if this breaks stuff on removal
             results.extend(self._extract_data(schema))
 
         return results
