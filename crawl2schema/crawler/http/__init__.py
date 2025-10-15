@@ -85,11 +85,10 @@ class SyncHTTPCrawler:
                 except Exception as e:
                     raise ParseError(f"Invalid selector '{selector}' in field '{field.get('name')}': {e}")
 
-                raw = default
+                value = default
                 if el:
-                    raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
-
-                value: Any = self._apply_formatters(raw, preformatter, postformatter, type_, default)
+                    value = el.text(strip=True) if not attr else el.attributes.get(attr, default)
+                    value: Any = self._apply_formatters(value, preformatter, postformatter, type_, default)
 
                 if url_follow_schema and isinstance(value, str):
                     try:
@@ -132,15 +131,18 @@ class SyncHTTPCrawler:
                     sub_pre = subfield.get("preformatter")
                     sub_post = subfield.get("postformatter")
 
-                    subraw = subdefault
+                    subval = subdefault
                     if subel:
-                        subraw = subel.text(strip=True) if not subattr else subel.attributes.get(subattr, subdefault)
-                    subval = self._apply_formatters(subraw, sub_pre, sub_post, subtype, subdefault)
+                        subval = subel.text(strip=True) if not subattr else subel.attributes.get(subattr, subdefault)
+                        if subval != subdefault:                
+                            subval = self._apply_formatters(subval, sub_pre, sub_post, subtype, subdefault)
+                    
                     obj[subfield["name"]] = subval
                 values.append(obj)
             else:
-                raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
-                val = self._apply_formatters(raw, preformatter, postformatter, type_, default)
+                val = el.text(strip=True) if not attr else el.attributes.get(attr, default)
+                if val != default:
+                    val = self._apply_formatters(val, preformatter, postformatter, type_, default)
                 values.append(val)
         
         if list_formatter and callable(list_formatter):
@@ -292,11 +294,10 @@ class AsyncHTTPCrawler:
                 except Exception as e:
                     raise ParseError(f"Invalid selector '{selector}' in field '{field.get('name')}': {e}")
 
-                raw = default
+                value = default
                 if el:
-                    raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
-
-                value = self._apply_formatters(raw, preformatter, postformatter, type_, default)
+                    value = el.attributes.get(field.get("attribute"), value) if "attribute" in field else el.text(strip=True)
+                    value = self._apply_formatters(value, preformatter, postformatter, type_, default)
 
                 if url_follow_schema and isinstance(value, str):
                     try:
@@ -340,15 +341,17 @@ class AsyncHTTPCrawler:
                     sub_pre = subfield.get("preformatter")
                     sub_post = subfield.get("postformatter")
 
-                    subraw = subdefault
+                    subval = subdefault
                     if subel:
-                        subraw = subel.text(strip=True) if not subattr else subel.attributes.get(subattr, subdefault)
-                    subval = self._apply_formatters(subraw, sub_pre, sub_post, subtype, subdefault)
+                        subval = subel.text(strip=True) if not subattr else subel.attributes.get(subattr, subdefault)
+                        if subval != subdefault:
+                            subval = self._apply_formatters(subval, sub_pre, sub_post, subtype, subdefault)
                     obj[subfield["name"]] = subval
                 values.append(obj)
             else:
-                raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
-                val = self._apply_formatters(raw, preformatter, postformatter, type_, default)
+                val = el.text(strip=True) if not attr else el.attributes.get(attr, default)
+                if val != default:
+                    val = self._apply_formatters(val, preformatter, postformatter, type_, default)
                 values.append(val)
                 
         if list_formatter and callable(list_formatter):

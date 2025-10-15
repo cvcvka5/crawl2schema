@@ -259,23 +259,29 @@ class SyncBrowserCrawler:
                         continue
 
                     # Regular fields
-                    el = item.css_first(field["selector"]) if "selector" in field else None
+                    
+                    set_to_default = True
                     raw = field.get("default")
+                    value = raw
+                    
+                    el = item.css_first(field["selector"]) if "selector" in field else None
                     if el:
+                        set_to_default = False
                         raw = el.attributes.get(field.get("attribute"), raw) if "attribute" in field else el.text(strip=True)
 
                     # Apply preformatter
-                    if field.get("preformatter") and callable(field["preformatter"]):
+                    if field.get("preformatter") and callable(field["preformatter"]) and not set_to_default:
                         raw = field["preformatter"](raw)
                 except Exception as e:
                     raise CrawlerError(f"Failed to extract field {field.get('name')}: {e}")
 
                 # Type conversion
-                value = self._cast_type(raw, field.get("type", "text"))
+                if not set_to_default:
+                    value = self._cast_type(raw, field.get("type", "text"))
 
                 try:
                     # Apply postformatter
-                    if field.get("postformatter") and callable(field["postformatter"]):
+                    if field.get("postformatter") and callable(field["postformatter"]) and not set_to_default:
                         value = field["postformatter"](value)
 
                     # Nested URL-following: use a new page
