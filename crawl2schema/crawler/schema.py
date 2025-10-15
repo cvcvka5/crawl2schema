@@ -14,29 +14,26 @@ class FieldSchema(Generic[T], TypedDict, total=True):
     type: Literal["text", "list", "number", "json", "undefined"]
     attribute: str
     default: Any
+    
     preformatter: Callable[[Any], Any]
     postformatter: Callable[[Any], Any]
-    url_follow_schema: "BaseCrawlerSchema"
-    list_subfields: List["FieldSchema"]
+    list_formatter: Callable[[List[Any]], Any]
+    
+    url_follow_schema: BaseCrawlerSchema
+    list_subfields: List[FieldSchema]
 
 
 # Pagination Schemas
-class PaginationSchema(TypedDict, total=False):
-    """Base pagination schema."""
-    type: Literal["page", "scroll"]
-
 
 # ---- URL Pagination ----
-class URLPaginationSchema(PaginationSchema, total=False):
-    type: Literal["page"]
+class URLPaginationSchema(TypedDict, total=False):
     page_placeholder: str
     start_page: int
     end_page: int
 
 
 # ---- Scroll Pagination ----
-class ScrollPaginationSchema(PaginationSchema, total=False):
-    type: Literal["scroll"]
+class ScrollPaginationSchema(TypedDict, total=False):
     stop_condition: Literal["count", "element", "no-new-elements"]
     scroll_distance: int
     scroll_delay: float
@@ -57,6 +54,28 @@ class ScrollPaginationSchemaNoNewElements(ScrollPaginationSchema, total=True):
     stop_condition: Literal["no-new-elements"]
     retry_limit: int
     retry_scroll_distance: int
+
+
+# ---- Button Pagination ----
+class ButtonPaginationSchema(TypedDict, total=False):
+    """
+    Pagination by clicking a "Load More" or "Next" button.
+    """
+    stop_condition: Literal["count", "element", "no-button"]
+    button_selector: str  # The selector for the button to click
+    click_delay: float  # Delay after clicking to wait for content to load
+
+# Specific types for strict typing
+class ButtonPaginationSchemaCount(ButtonPaginationSchema, total=True):
+    stop_condition: Literal["count"]
+    click_count: int  # Max number of button clicks
+
+class ButtonPaginationSchemaElement(ButtonPaginationSchema, total=True):
+    stop_condition: Literal["element"]
+    stop_selector: str  # Stop when this element appears
+
+class ButtonPaginationSchemaNoButton(ButtonPaginationSchema, total=True):
+    stop_condition: Literal["no-button"]
 
 
 # Crawler Schemas
