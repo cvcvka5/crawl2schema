@@ -115,6 +115,7 @@ class SyncHTTPCrawler:
         preformatter = field.get("preformatter")
         postformatter = field.get("postformatter")
         list_subfields = field.get("list_subfields")
+        list_formatter = field.get("list_formatter")
 
         for el in parent.css(selector):
             if list_subfields:
@@ -141,6 +142,10 @@ class SyncHTTPCrawler:
                 raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
                 val = self._apply_formatters(raw, preformatter, postformatter, type_, default)
                 values.append(val)
+        
+        if list_formatter and callable(list_formatter):
+            values = list_formatter(values)
+        
         return values
 
     def _apply_formatters(self, value, pre, post, type_, default):
@@ -318,6 +323,7 @@ class AsyncHTTPCrawler:
         preformatter = field.get("preformatter")
         postformatter = field.get("postformatter")
         list_subfields = field.get("list_subfields")
+        list_formatter = field.get("list_formatter")
 
         for el in parent.css(selector):
             if list_subfields:
@@ -344,6 +350,10 @@ class AsyncHTTPCrawler:
                 raw = el.text(strip=True) if not attr else el.attributes.get(attr, default)
                 val = self._apply_formatters(raw, preformatter, postformatter, type_, default)
                 values.append(val)
+                
+        if list_formatter and callable(list_formatter):
+            values = list_formatter(values)
+        
         return values
 
     def _apply_formatters(self, value, pre, post, type_, default):

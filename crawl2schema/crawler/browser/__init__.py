@@ -272,6 +272,7 @@ class SyncBrowserCrawler:
         type_ = field.get("type", "text")
         preformatter = field.get("preformatter")
         postformatter = field.get("postformatter")
+        list_formatter = field.get("list_formatter")
 
         for el in parent.css(selector):
             if list_subfields:
@@ -314,6 +315,10 @@ class SyncBrowserCrawler:
                 if postformatter:
                     val = postformatter(val)
                 values.append(val)
+                
+        if list_formatter and callable(list_formatter):
+            values = list_formatter(values)
+        
         return values
 
     def _cast_type(self, value, type_: str):
