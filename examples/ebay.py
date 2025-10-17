@@ -2,6 +2,8 @@ from crawl2schema.crawler.browser import SyncBrowserCrawler
 from crawl2schema.crawler.schema import BrowserCrawlerSchema
 from pprint import pprint
 import re
+from playwright.sync_api import sync_playwright
+
 
 # helper functions
 def clean_text(text: str) -> str:
@@ -11,7 +13,11 @@ def price_to_number(price: str) -> int | float:
     price = price.replace(",", "").strip()
     return re.match(r"^\$(\d*\.\d*)$", price).group(1)
 
-crawler = SyncBrowserCrawler(headless=False)
+p = sync_playwright().start()
+browser = p.chromium.launch(headless=False)
+context = browser.new_context()
+
+crawler = SyncBrowserCrawler(context=context)
 schema: BrowserCrawlerSchema = {
     "base_selector": "li.s-card[id^=item]",
     "fields": [
