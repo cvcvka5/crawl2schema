@@ -43,7 +43,7 @@ shallow_crawler_schema: HTTPCrawlerSchema = {
 
 
 @as_new_section_sync
-def test_shallow_httpcrawler():
+def test_shallow():
     sync_crawler = SyncHTTPCrawler()
     products = sync_crawler.fetch(BASE_URL, schema=shallow_crawler_schema, headers=HEADERS)
 
@@ -89,7 +89,7 @@ deep_crawler_schema["fields"].append({
 
 
 @as_new_section_sync
-def test_url_follow_httpcrawler():
+def test_url_follow():
     sync_crawler = SyncHTTPCrawler()
     data = sync_crawler.fetch(BASE_URL, schema=deep_crawler_schema, headers=HEADERS)
 
@@ -104,7 +104,7 @@ def test_url_follow_httpcrawler():
 
 
 @as_new_section_sync
-def test_paginated_shallow_httpcrawler():
+def test_paginated_shallow():
     base_url = "https://web-scraping.dev/products?page={page_index}"
 
     shallow_paginated_crawler_schema = copy.deepcopy(shallow_crawler_schema)
@@ -127,7 +127,7 @@ def test_paginated_shallow_httpcrawler():
 
 
 @as_new_section_sync
-def test_paginated_url_follow_shallow_httpcrawler():
+def test_paginated_url_follow_shallow():
     base_url = "https://web-scraping.dev/products?page={page_index}"
 
     deep_paginated_crawler_schema = copy.deepcopy(deep_crawler_schema)
@@ -208,11 +208,11 @@ def test_crawler_error():
 
 if __name__ == "__main__":
     test_webpage_live()
-    test_shallow_httpcrawler()
+    test_shallow()
     test_product_reviews()
-    test_url_follow_httpcrawler()
-    test_paginated_shallow_httpcrawler()
-    test_paginated_url_follow_shallow_httpcrawler()
+    test_url_follow()
+    test_paginated_shallow()
+    test_paginated_url_follow_shallow()
     
     test_invalid_pagination_schema()
     test_request_error()

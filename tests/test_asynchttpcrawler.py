@@ -67,7 +67,7 @@ async def test_webpage_live():
             print("Webpage is LIVE.")
 
 @as_new_section_async
-async def test_shallow_httpcrawler():
+async def test_shallow():
     crawler = AsyncHTTPCrawler()
     products = await crawler.fetch(BASE_URL, schema=async_shallow_crawler_schema, headers=HEADERS)
     
@@ -91,7 +91,7 @@ async def test_product_reviews():
         assert isinstance(product["reviews"], list)
 
 @as_new_section_async
-async def test_url_follow_httpcrawler():
+async def test_url_follow():
     crawler = AsyncHTTPCrawler()
     data = await crawler.fetch(BASE_URL, schema=deep_crawler_schema, headers=HEADERS)
     
@@ -105,7 +105,7 @@ async def test_url_follow_httpcrawler():
         assert isinstance(product["reviews"], list)
 
 @as_new_section_async
-async def test_paginated_shallow_httpcrawler():
+async def test_paginated_shallow():
     base_url = "https://web-scraping.dev/products?page={page_index}"
     shallow_paginated_schema = async_shallow_crawler_schema.copy()
     shallow_paginated_schema["url_pagination"] = {
@@ -125,7 +125,7 @@ async def test_paginated_shallow_httpcrawler():
         assert len(product["short_description"]) <= 30
 
 @as_new_section_async
-async def test_paginated_url_follow_httpcrawler():
+async def test_paginated_url_follow():
     base_url = "https://web-scraping.dev/products?page={page_index}"
     deep_paginated_schema = deep_crawler_schema.copy()
     deep_paginated_schema["url_pagination"] = {
@@ -220,11 +220,11 @@ async def test_pagination_error():
 # Run all async tests directly
 if __name__ == "__main__":
     test_webpage_live()
-    test_shallow_httpcrawler()
+    test_shallow()
     test_product_reviews()
-    test_url_follow_httpcrawler()
-    test_paginated_shallow_httpcrawler()
-    test_paginated_url_follow_httpcrawler()
+    test_url_follow()
+    test_paginated_shallow()
+    test_paginated_url_follow()
     test_multiple_concurrent_fetches()
     test_semaphore_limited_fetch()
     
