@@ -3,7 +3,7 @@ import asyncio
 import aiohttp
 import json
 from selectolax.parser import HTMLParser
-from ..schema import HTTPCrawlerSchema, FieldSchema, URLPaginationSchema
+from ..schema import HTTPCrawlerSchema, HTTPFieldSchema, URLPaginationSchema
 from ...exceptions import InvalidSchema, CrawlerError, FormatterError, PaginationError, ParseError, RequestError
 import requests
 
@@ -68,7 +68,7 @@ class SyncHTTPCrawler:
         except Exception as e:
             raise ParseError(f"Invalid base_selector '{schema.get('base_selector')}', error: {e}")
 
-        fields: List[FieldSchema] = schema.get("fields", [])
+        fields: List[HTTPFieldSchema] = schema.get("fields", [])
         records: List[Dict[str, Any]] = []
 
         for parent in base_elements:
@@ -111,7 +111,7 @@ class SyncHTTPCrawler:
             records.append(record)
         return records
 
-    def _extract_list_field(self, parent, field: FieldSchema):
+    def _extract_list_field(self, parent, field: HTTPFieldSchema):
         values: List[Any] = []
         selector = field["selector"]
         attr = field.get("attribute")
@@ -282,7 +282,7 @@ class AsyncHTTPCrawler:
         except Exception as e:
             raise ParseError(f"Invalid base_selector '{schema.get('base_selector')}', error: {e}")
 
-        fields: List[FieldSchema] = schema.get("fields", [])
+        fields: List[HTTPFieldSchema] = schema.get("fields", [])
         records: List[Dict[str, Any]] = []
 
         for parent in base_elements:
@@ -326,7 +326,7 @@ class AsyncHTTPCrawler:
             records.append(record)
         return records
 
-    async def _extract_list_field(self, parent, field: FieldSchema, *args, **kwargs) -> List[Any]:
+    async def _extract_list_field(self, parent, field: HTTPFieldSchema, *args, **kwargs) -> List[Any]:
         values: List[Any] = []
         selector = field.get("selector")
         attr = field.get("attribute")

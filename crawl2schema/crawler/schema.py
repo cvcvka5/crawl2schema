@@ -22,9 +22,9 @@ class BaseFieldSchema(Generic[T], TypedDict, total=True):
     postformatter: Callable[[Any], Any]
     list_formatter: Callable[[List[Any]], Any]
     
-class HttpFieldSchema(BaseFieldSchema):
+class HTTPFieldSchema(BaseFieldSchema):
     url_follow_schema: HTTPCrawlerSchema
-    list_subfields: List[HttpFieldSchema]
+    list_subfields: List[HTTPFieldSchema]
     
 class SyncBrowserFieldSchema(BaseFieldSchema):
     url_follow_schema: SyncBrowserCrawlerSchema
@@ -98,7 +98,7 @@ class HTTPCrawlerSchema(BaseCrawlerSchema, total=True):
     """
     Schema for HTTP-based crawlers (requests, aiohttp, etc.)
     """
-    fields: List[HttpFieldSchema]
+    fields: List[HTTPFieldSchema]
     url_pagination: URLPaginationSchema
     on_pageload: Callable[[Response], None]
 
