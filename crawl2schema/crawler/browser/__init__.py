@@ -3,7 +3,7 @@ from typing import List, Dict, Any
 from crawl2schema.crawler.schema import SyncBrowserCrawlerSchema, AsyncBrowserCrawlerSchema, URLPaginationSchema
 from crawl2schema.exceptions import RequestError, CrawlerError, FormatterError, ParseError
 from selectolax.parser import HTMLParser
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, BrowserContext
 
 
 class SyncBrowserCrawler:
@@ -13,10 +13,13 @@ class SyncBrowserCrawler:
     nested schemas, list subfields, and full field extraction with formatters.
     """
 
-    def __init__(self, headless: bool = True):
-        self.playwright = sync_playwright().start()
-        browser = self.playwright.chromium.launch(headless=headless)
-        self.context = browser.new_context()
+    def __init__(self, context: BrowserContext = None, headless: bool = True):
+        if context is None:
+            self.playwright = sync_playwright().start()
+            browser = self.playwright.chromium.launch(headless=headless)
+            self.context = browser.new_context()
+        else:
+            self.context = context
         self.page = self.context.new_page()
 
     def fetch(self, url: str, schema: SyncBrowserCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
