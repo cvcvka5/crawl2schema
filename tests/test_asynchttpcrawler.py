@@ -8,13 +8,8 @@ from crawl2schema.exceptions import (
     PaginationError,
     CrawlerError
 )
+from util import as_new_section_async
 
-def as_new_section(func):
-    def inner():
-        print(f"\n\n---\t{func.__name__}\t---\n")
-        asyncio.run(func())
-        print(f"\n---\tEND\t---")
-    return inner
 
 BASE_URL = "https://web-scraping.dev/products"
 HEADERS = {
@@ -64,14 +59,14 @@ deep_async_crawler_schema: HTTPCrawlerSchema = {
 
 # --- Tests ---
 
-@as_new_section
+@as_new_section_async
 async def test_async_webpage_live():
     async with aiohttp.ClientSession(headers=HEADERS) as session:
         async with session.get(BASE_URL) as resp:
             assert resp.status == 200
             print("Webpage is LIVE.")
 
-@as_new_section
+@as_new_section_async
 async def test_async_shallow_httpcrawler():
     crawler = AsyncHTTPCrawler()
     products = await crawler.fetch(BASE_URL, schema=async_shallow_crawler_schema, headers=HEADERS)
@@ -83,7 +78,7 @@ async def test_async_shallow_httpcrawler():
         assert None not in product.values()
         assert len(product["short_description"]) <= 30
 
-@as_new_section
+@as_new_section_async
 async def test_async_product_reviews():
     crawler = AsyncHTTPCrawler()
     product_url = f"{BASE_URL[:-1]}/5"
@@ -95,7 +90,7 @@ async def test_async_product_reviews():
         assert "reviews" in product
         assert isinstance(product["reviews"], list)
 
-@as_new_section
+@as_new_section_async
 async def test_async_url_follow_httpcrawler():
     crawler = AsyncHTTPCrawler()
     data = await crawler.fetch(BASE_URL, schema=deep_async_crawler_schema, headers=HEADERS)
@@ -109,7 +104,7 @@ async def test_async_url_follow_httpcrawler():
         assert "reviews" in product
         assert isinstance(product["reviews"], list)
 
-@as_new_section
+@as_new_section_async
 async def test_async_paginated_shallow_httpcrawler():
     base_url = "https://web-scraping.dev/products?page={page_index}"
     shallow_paginated_schema = async_shallow_crawler_schema.copy()
@@ -129,7 +124,7 @@ async def test_async_paginated_shallow_httpcrawler():
         assert None not in product.values()
         assert len(product["short_description"]) <= 30
 
-@as_new_section
+@as_new_section_async
 async def test_async_paginated_url_follow_httpcrawler():
     base_url = "https://web-scraping.dev/products?page={page_index}"
     deep_paginated_schema = deep_async_crawler_schema.copy()
@@ -153,7 +148,7 @@ async def test_async_paginated_url_follow_httpcrawler():
 
 # --- Concurrency / Semaphore tests ---
 
-@as_new_section
+@as_new_section_async
 async def test_async_multiple_concurrent_fetches():
     crawler = AsyncHTTPCrawler()
     urls = [f"{BASE_URL}?page={i}" for i in range(1, 4)]
@@ -166,7 +161,7 @@ async def test_async_multiple_concurrent_fetches():
     
     assert total == 15
 
-@as_new_section
+@as_new_section_async
 async def test_async_semaphore_limited_fetch():
     crawler = AsyncHTTPCrawler()
     urls = [f"{BASE_URL}?page={i}" for i in range(1, 6)]
@@ -188,7 +183,7 @@ async def test_async_semaphore_limited_fetch():
 #  Async Exception Tests
 # ─────────────────────
 
-@as_new_section
+@as_new_section_async
 async def test_async_request_error():
     crawler = AsyncHTTPCrawler()
     bad_url = "https://httpbin.org/status/500"
@@ -196,7 +191,7 @@ async def test_async_request_error():
     with pytest.raises(RequestError):
         await crawler.fetch(bad_url, schema=async_shallow_crawler_schema, headers=HEADERS)
 
-@as_new_section
+@as_new_section_async
 async def test_async_crawler_error():
     crawler = AsyncHTTPCrawler()
     broken_schema = {
@@ -207,7 +202,7 @@ async def test_async_crawler_error():
     with pytest.raises(CrawlerError):
         await crawler.fetch(BASE_URL, schema=broken_schema, headers=HEADERS)
 
-@as_new_section
+@as_new_section_async
 async def test_async_pagination_error():
     crawler = AsyncHTTPCrawler()
     bad_schema = async_shallow_crawler_schema.copy()

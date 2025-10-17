@@ -12,17 +12,8 @@ from crawl2schema.exceptions import (
     PaginationError,
     CrawlerError
 )
+from util import as_new_section_sync
 
-def as_new_section(func):
-    def inner():
-        print(f"\n\n---\t{func.__name__}\t---\n")
-        try:
-            func()
-        except Exception as e:
-            print(f"[EXCEPTION] {type(e).__name__}: {e}")
-            raise
-        print(f"\n---\tEND\t---")
-    return inner
 
 
 BASE_URL = "https://web-scraping.dev/products"
@@ -31,7 +22,7 @@ HEADERS = {
 }
 
 
-@as_new_section
+@as_new_section_sync
 def test_webpage_live():
     assert requests.get(BASE_URL, headers=HEADERS).status_code == 200
     print("Webpage is LIVE.")
@@ -51,7 +42,7 @@ shallow_crawler_schema: HTTPCrawlerSchema = {
 }
 
 
-@as_new_section
+@as_new_section_sync
 def test_sync_shallow_httpcrawler():
     sync_crawler = SyncHTTPCrawler()
     products = sync_crawler.fetch(BASE_URL, schema=shallow_crawler_schema, headers=HEADERS)
@@ -78,7 +69,7 @@ product_schema: HTTPCrawlerSchema = {
 }
 
 
-@as_new_section
+@as_new_section_sync
 def test_sync_product_reviews():
     sync_crawler = SyncHTTPCrawler()
     product_url = f"{BASE_URL[:-1]}/5"
@@ -97,7 +88,7 @@ deep_crawler_schema["fields"].append({
 })
 
 
-@as_new_section
+@as_new_section_sync
 def test_sync_url_follow_httpcrawler():
     sync_crawler = SyncHTTPCrawler()
     data = sync_crawler.fetch(BASE_URL, schema=deep_crawler_schema, headers=HEADERS)
@@ -112,7 +103,7 @@ def test_sync_url_follow_httpcrawler():
         assert isinstance(product["reviews"], list)
 
 
-@as_new_section
+@as_new_section_sync
 def test_sync_paginated_shallow_httpcrawler():
     base_url = "https://web-scraping.dev/products?page={page_index}"
 
@@ -135,7 +126,7 @@ def test_sync_paginated_shallow_httpcrawler():
         assert len(product["short_description"]) <= 30
 
 
-@as_new_section
+@as_new_section_sync
 def test_sync_paginated_url_follow_shallow_httpcrawler():
     base_url = "https://web-scraping.dev/products?page={page_index}"
 
@@ -164,7 +155,7 @@ def test_sync_paginated_url_follow_shallow_httpcrawler():
 # Exception Tests
 # ─────────────────────────────
 
-@as_new_section
+@as_new_section_sync
 def test_invalid_pagination_schema():
     sync_crawler = SyncHTTPCrawler()
     bad_schema = copy.deepcopy(shallow_crawler_schema)
@@ -174,14 +165,14 @@ def test_invalid_pagination_schema():
         sync_crawler.fetch("https://example.com", schema=bad_schema)
 
 
-@as_new_section
+@as_new_section_sync
 def test_request_error():
     sync_crawler = SyncHTTPCrawler()
     with pytest.raises(RequestError):
         sync_crawler.fetch("https://definitelynotarealurl.abcxyz", schema=shallow_crawler_schema)
 
 
-@as_new_section
+@as_new_section_sync
 def test_pagination_error():
     sync_crawler = SyncHTTPCrawler()
     bad_pagination_schema = {
@@ -198,7 +189,7 @@ def test_pagination_error():
         sync_crawler.fetch(BASE_URL, schema=bad_pagination_schema)
 
 
-@as_new_section
+@as_new_section_sync
 def test_sync_crawler_error():
     """Should raise CrawlerError on unexpected internal exception."""
     crawler = SyncHTTPCrawler()
