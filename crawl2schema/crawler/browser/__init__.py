@@ -287,7 +287,7 @@ class SyncBrowserCrawler:
                     el = item.css_first(field["selector"]) if "selector" in field else None
                     if el:
                         set_to_default = False
-                        raw = el.attributes.get(field.get("attribute"), raw) if "attribute" in field else el.text(strip=True)
+                        raw = el.attributes.get(field.get("attribute"), raw) if "attribute" in field else el.text()
 
                     # Apply preformatter
                     if field.get("preformatter") and callable(field["preformatter"]) and not set_to_default:
@@ -349,7 +349,7 @@ class SyncBrowserCrawler:
                     sub_el = el.css_first(sub["selector"])
                     subraw = sub.get("default")
                     if sub_el:
-                        subraw = sub_el.attributes.get(sub.get("attribute"), subraw) if "attribute" in sub else sub_el.text(strip=True)
+                        subraw = sub_el.attributes.get(sub.get("attribute"), subraw) if "attribute" in sub else sub_el.text()
 
                     # Apply subfield formatters
                     if sub.get("preformatter") and callable(sub["preformatter"]):
@@ -376,7 +376,7 @@ class SyncBrowserCrawler:
                         obj[sub["name"]] = subval
                 values.append(obj)
             else:
-                raw = el.attributes.get(attr, default) if attr else el.text(strip=True)
+                raw = el.attributes.get(attr, default) if attr else el.text()
                 if preformatter:
                     raw = preformatter(raw)
                 val = self._cast_type(raw, type_)

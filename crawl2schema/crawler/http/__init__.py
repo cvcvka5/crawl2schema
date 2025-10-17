@@ -93,7 +93,7 @@ class SyncHTTPCrawler:
 
                 value = default
                 if el:
-                    value = el.text(strip=True) if not attr else el.attributes.get(attr, default)
+                    value = el.text() if not attr else el.attributes.get(attr, default)
                     value: Any = self._apply_formatters(value, preformatter, postformatter, type_, default)
 
                 if url_follow_schema and isinstance(value, str):
@@ -139,14 +139,14 @@ class SyncHTTPCrawler:
 
                     subval = subdefault
                     if subel:
-                        subval = subel.text(strip=True) if not subattr else subel.attributes.get(subattr, subdefault)
+                        subval = subel.text() if not subattr else subel.attributes.get(subattr, subdefault)
                         if subval != subdefault:                
                             subval = self._apply_formatters(subval, sub_pre, sub_post, subtype, subdefault)
                     
                     obj[subfield["name"]] = subval
                 values.append(obj)
             else:
-                val = el.text(strip=True) if not attr else el.attributes.get(attr, default)
+                val = el.text() if not attr else el.attributes.get(attr, default)
                 if val != default:
                     val = self._apply_formatters(val, preformatter, postformatter, type_, default)
                 values.append(val)
@@ -307,7 +307,7 @@ class AsyncHTTPCrawler:
 
                 value = default
                 if el:
-                    value = el.attributes.get(field.get("attribute"), value) if "attribute" in field else el.text(strip=True)
+                    value = el.attributes.get(field.get("attribute"), value) if "attribute" in field else el.text()
                     value = self._apply_formatters(value, preformatter, postformatter, type_, default)
 
                 if url_follow_schema and isinstance(value, str):
@@ -354,13 +354,13 @@ class AsyncHTTPCrawler:
 
                     subval = subdefault
                     if subel:
-                        subval = subel.text(strip=True) if not subattr else subel.attributes.get(subattr, subdefault)
+                        subval = subel.text() if not subattr else subel.attributes.get(subattr, subdefault)
                         if subval != subdefault:
                             subval = self._apply_formatters(subval, sub_pre, sub_post, subtype, subdefault)
                     obj[subfield["name"]] = subval
                 values.append(obj)
             else:
-                val = el.text(strip=True) if not attr else el.attributes.get(attr, default)
+                val = el.text() if not attr else el.attributes.get(attr, default)
                 if val != default:
                     val = self._apply_formatters(val, preformatter, postformatter, type_, default)
                 values.append(val)
