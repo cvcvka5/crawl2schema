@@ -1,5 +1,8 @@
 from __future__ import annotations
 from typing import TypedDict, List, Callable, Any, Literal, Generic, TypeVar, Tuple
+from requests import Response
+from playwright.sync_api import Page as SyncPage
+from playwright.async_api import Page as AsyncPage
 
 T = TypeVar("T")
 
@@ -88,6 +91,7 @@ class HTTPCrawlerSchema(BaseCrawlerSchema, total=True):
     Schema for HTTP-based crawlers (requests, aiohttp, etc.)
     """
     url_pagination: URLPaginationSchema
+    on_pageload: Callable[[Response], None]
 
 
 class WaitForSelectorArgs(TypedDict, total=False):
@@ -106,3 +110,21 @@ class BrowserCrawlerSchema(BaseCrawlerSchema, total=True):
     scroll_pagination: ScrollPaginationSchema
     button_pagination: ButtonPaginationSchema
     url_pagination: URLPaginationSchema
+    
+
+class SyncBrowserCrawlerSchema(BrowserCrawlerSchema, total=True):
+    """
+    Schema for browser-based crawlers (Playwright)
+    Supports both scroll and URL pagination.
+    """
+    on_pageload: Callable[[SyncPage], None]
+    on_scroll: Callable[[SyncPage], None]
+    
+    
+class AsyncBrowserCrawlerSchema(BrowserCrawlerSchema, total=True):
+    """
+    Schema for browser-based crawlers (Playwright)
+    Supports both scroll and URL pagination.
+    """
+    on_pageload: Callable[[AsyncPage], None]
+    on_scroll: Callable[[AsyncPage], None]

@@ -27,6 +27,8 @@ class SyncHTTPCrawler:
 
     def fetch(self, url: str, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         pagination = schema.get("url_pagination", None)
+        on_pageload = schema.get("on_pageload")
+        
         urls: List[str] = []
 
         if pagination is None:
@@ -45,6 +47,10 @@ class SyncHTTPCrawler:
             try:
                 response = self.session.get(url, *args, **kwargs)
                 response.raise_for_status()
+                
+                if on_pageload and callable(on_pageload):
+                    on_pageload(response)
+                
             except requests.RequestException as e:
                 raise RequestError(f"Failed to fetch {url}: {e}") from e
 
@@ -238,7 +244,6 @@ class AsyncHTTPCrawler:
                 raise PaginationError(f"Invalid pagination schema: {e}")
 
 
-        session = await self._get_session()
         tasks = [self._fetch_page(u, schema, *args, **kwargs) for u in urls]
 
         try:
@@ -249,11 +254,17 @@ class AsyncHTTPCrawler:
         return [r for sublist in results for r in sublist]
 
     async def _fetch_page(self, url: str, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+        on_pageload = schema.get("on_pageload")
+        
         async with self.semaphore:
             session = await self._get_session()
             try:
                 async with session.get(url, *args, **kwargs) as resp:
                     resp.raise_for_status()
+                    
+                    if on_pageload and callable(on_pageload):
+                        on_pageload(resp)
+                    
                     html = await resp.text()
             except aiohttp.ClientError as e:
                 raise RequestError(f"Failed to fetch {url}: {e}") from e

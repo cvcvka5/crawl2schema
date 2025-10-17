@@ -1,6 +1,6 @@
 import time
 from typing import List, Dict, Any
-from crawl2schema.crawler.schema import BrowserCrawlerSchema, URLPaginationSchema
+from crawl2schema.crawler.schema import SyncBrowserCrawlerSchema, AsyncBrowserCrawlerSchema, URLPaginationSchema
 from crawl2schema.exceptions import RequestError, CrawlerError, FormatterError, ParseError
 from selectolax.parser import HTMLParser
 from playwright.sync_api import sync_playwright
@@ -19,7 +19,7 @@ class SyncBrowserCrawler:
         self.context = browser.new_context()
         self.page = self.context.new_page()
 
-    def fetch(self, url: str, schema: BrowserCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+    def fetch(self, url: str, schema: SyncBrowserCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         # URL Pagination
         if "url_pagination" in schema and schema["url_pagination"]:
             return self._handle_url_pagination(url, schema=schema, *args, **kwargs)
@@ -46,7 +46,7 @@ class SyncBrowserCrawler:
     # ---------------------------
     # Scroll Pagination
     # ---------------------------
-    def _handle_scroll_pagination(self, schema: BrowserCrawlerSchema):
+    def _handle_scroll_pagination(self, schema: SyncBrowserCrawlerSchema):
         pagination = schema["scroll_pagination"]
         stop_condition = pagination.get("stop_condition", "count")
         scroll_delay = pagination.get("scroll_delay", 1.5)
@@ -56,6 +56,7 @@ class SyncBrowserCrawler:
         retry_limit = pagination.get("retry_limit", 3)
         retry_scroll_distance = pagination.get("retry_scroll_distance", 0)
         scroll_horizontal = pagination.get("scroll_horizontal", False)
+        on_scroll = schema.get("on_scroll")
 
         total_scrolls = 0
         previous_count = 0
@@ -73,6 +74,10 @@ class SyncBrowserCrawler:
                     self.page.locator(scroll_selector).evaluate(f"(el) => el.scrollBy({scroll_distance}, 0)")
                 else:
                     self.page.locator(scroll_selector).evaluate(f"(el) => el.scrollBy(0, {scroll_distance})")
+            
+            if on_scroll and callable(on_scroll):
+                on_scroll(self.apge)
+            
             time.sleep(scroll_delay)
             total_scrolls += 1
 
@@ -117,7 +122,7 @@ class SyncBrowserCrawler:
     # ---------------------------
     # URL Pagination
     # ---------------------------
-    def _handle_url_pagination(self, url: str, schema: BrowserCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+    def _handle_url_pagination(self, url: str, schema: SyncBrowserCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         pagination: URLPaginationSchema = schema["url_pagination"]
         results: List[Dict[str, Any]] = []
 
@@ -125,11 +130,17 @@ class SyncBrowserCrawler:
         end = pagination.get("end_page", 1)
         placeholder = pagination.get("page_placeholder", "{page}")
         wait_for_selector = schema.get("wait_for_selector")
+        on_pageload = schema.get("on_pageload")
         
         for i in range(start, end + 1):
             page_url = url.replace(placeholder, str(i))
 
             self.page.goto(page_url, *args, **kwargs)
+            
+            if on_pageload and callable(on_pageload):
+                on_pageload(self.page)
+
+                
             
             if wait_for_selector:
                 self.page.wait_for_selector(**wait_for_selector)
@@ -142,7 +153,7 @@ class SyncBrowserCrawler:
     # ---------------------------
     # Button Pagination
     # ---------------------------
-    def _handle_button_pagination(self, schema: BrowserCrawlerSchema):
+    def _handle_button_pagination(self, schema: SyncBrowserCrawlerSchema):
         pagination = schema.get("button_pagination")
         if not pagination:
             return
@@ -166,6 +177,7 @@ class SyncBrowserCrawler:
         total_clicks = 0
         max_clicks = pagination.get("click_count", 5) if stop_condition == "count" else None
         stop_selector = pagination.get("stop_selector") if stop_condition == "element" else None
+        on_scroll = schema.get("on_scroll")
 
         while True:
             # Scroll first if scroll_distance != 0
@@ -180,6 +192,10 @@ class SyncBrowserCrawler:
                         self.page.locator(scroll_selector).evaluate(f"(el) => el.scrollBy({scroll_distance}, 0)")
                     else:
                         self.page.locator(scroll_selector).evaluate(f"(el) => el.scrollBy(0, {scroll_distance})")
+                
+                if on_scroll and callable(on_scroll):
+                    on_scroll(self.page)
+                
                 time.sleep(cycle_delay)
                 total_scrolls += 1
 
@@ -204,6 +220,7 @@ class SyncBrowserCrawler:
                                 self.page.locator(scroll_selector).evaluate(
                                     f"(el) => el.scrollBy(0, {retry_scroll_distance})"
                                 )
+
 
                     time.sleep(retry_delay)
                     continue
@@ -239,7 +256,7 @@ class SyncBrowserCrawler:
     # ---------------------------
     # Data Extraction
     # ---------------------------
-    def _extract_data(self, schema: BrowserCrawlerSchema) -> List[Dict[str, Any]]:
+    def _extract_data(self, schema: SyncBrowserCrawlerSchema) -> List[Dict[str, Any]]:
         html = self.page.content()
         tree = HTMLParser(html)
         base_selector = schema.get("base_selector")
