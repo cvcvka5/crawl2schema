@@ -43,7 +43,7 @@ shallow_crawler_schema: HTTPCrawlerSchema = {
 
 
 @as_new_section_sync
-def test_sync_shallow_httpcrawler():
+def test_shallow_httpcrawler():
     sync_crawler = SyncHTTPCrawler()
     products = sync_crawler.fetch(BASE_URL, schema=shallow_crawler_schema, headers=HEADERS)
 
@@ -70,7 +70,7 @@ product_schema: HTTPCrawlerSchema = {
 
 
 @as_new_section_sync
-def test_sync_product_reviews():
+def test_product_reviews():
     sync_crawler = SyncHTTPCrawler()
     product_url = f"{BASE_URL[:-1]}/5"
     data = sync_crawler.fetch(product_url, schema=product_schema, headers=HEADERS)
@@ -89,7 +89,7 @@ deep_crawler_schema["fields"].append({
 
 
 @as_new_section_sync
-def test_sync_url_follow_httpcrawler():
+def test_url_follow_httpcrawler():
     sync_crawler = SyncHTTPCrawler()
     data = sync_crawler.fetch(BASE_URL, schema=deep_crawler_schema, headers=HEADERS)
 
@@ -104,7 +104,7 @@ def test_sync_url_follow_httpcrawler():
 
 
 @as_new_section_sync
-def test_sync_paginated_shallow_httpcrawler():
+def test_paginated_shallow_httpcrawler():
     base_url = "https://web-scraping.dev/products?page={page_index}"
 
     shallow_paginated_crawler_schema = copy.deepcopy(shallow_crawler_schema)
@@ -127,7 +127,7 @@ def test_sync_paginated_shallow_httpcrawler():
 
 
 @as_new_section_sync
-def test_sync_paginated_url_follow_shallow_httpcrawler():
+def test_paginated_url_follow_shallow_httpcrawler():
     base_url = "https://web-scraping.dev/products?page={page_index}"
 
     deep_paginated_crawler_schema = copy.deepcopy(deep_crawler_schema)
@@ -190,7 +190,7 @@ def test_pagination_error():
 
 
 @as_new_section_sync
-def test_sync_crawler_error():
+def test_crawler_error():
     """Should raise CrawlerError on unexpected internal exception."""
     crawler = SyncHTTPCrawler()
     broken_schema = {
@@ -208,13 +208,13 @@ def test_sync_crawler_error():
 
 if __name__ == "__main__":
     test_webpage_live()
-    test_sync_shallow_httpcrawler()
-    test_sync_product_reviews()
-    test_sync_url_follow_httpcrawler()
-    test_sync_paginated_shallow_httpcrawler()
-    test_sync_paginated_url_follow_shallow_httpcrawler()
+    test_shallow_httpcrawler()
+    test_product_reviews()
+    test_url_follow_httpcrawler()
+    test_paginated_shallow_httpcrawler()
+    test_paginated_url_follow_shallow_httpcrawler()
     
     test_invalid_pagination_schema()
     test_request_error()
     test_pagination_error()
-    test_sync_crawler_error()
+    test_crawler_error()
