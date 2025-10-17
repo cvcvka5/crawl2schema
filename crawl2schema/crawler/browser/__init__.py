@@ -23,6 +23,7 @@ class SyncBrowserCrawler:
         self.page = self.context.new_page()
 
     def fetch(self, url: str, schema: SyncBrowserCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
+        on_pageload = schema.get("on_pageload")
         # URL Pagination
         if "url_pagination" in schema and schema["url_pagination"]:
             return self._handle_url_pagination(url, schema=schema, *args, **kwargs)
@@ -30,6 +31,8 @@ class SyncBrowserCrawler:
         try:            
             # Single-page extraction
             self.page.goto(url, *args, **kwargs)
+            if on_pageload and callable(on_pageload):
+                on_pageload(self.page)
 
             wait_for_selector = schema.get("wait_for_selector")
             if wait_for_selector:
@@ -79,7 +82,7 @@ class SyncBrowserCrawler:
                     self.page.locator(scroll_selector).evaluate(f"(el) => el.scrollBy(0, {scroll_distance})")
             
             if on_scroll and callable(on_scroll):
-                on_scroll(self.apge)
+                on_scroll(self.page)
             
             time.sleep(scroll_delay)
             total_scrolls += 1
@@ -311,7 +314,8 @@ class SyncBrowserCrawler:
                         nested_crawler = SyncBrowserCrawler.__new__(SyncBrowserCrawler)
                         nested_crawler.context = self.context
                         nested_crawler.page = nested_page
-                        nested_crawler.playwright = self.playwright
+                        if hasattr(self, "plawright"):
+                            nested_crawler.playwright = self.playwright
                         nested_data = nested_crawler.fetch(value, field["url_follow_schema"])
                         nested_page.close()
 
@@ -364,7 +368,8 @@ class SyncBrowserCrawler:
                         nested_crawler = SyncBrowserCrawler.__new__(SyncBrowserCrawler)
                         nested_crawler.context = self.context
                         nested_crawler.page = nested_page
-                        nested_crawler.playwright = self.playwright
+                        if hasattr(self, "playwright"):
+                            nested_crawler.playwright = self.playwright
                         nested_data = nested_crawler.fetch(subval, sub["url_follow_schema"])
                         nested_page.close()
                         if isinstance(nested_data, list):
@@ -409,4 +414,5 @@ class SyncBrowserCrawler:
     # ---------------------------
     def close(self):
         self.context.close()
-        self.playwright.stop()
+        if hasattr(self, "playwright"):
+            self.playwright.stop()

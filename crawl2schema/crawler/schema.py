@@ -8,7 +8,7 @@ T = TypeVar("T")
 
 
 # Field schema definition
-class FieldSchema(Generic[T], TypedDict, total=True):
+class BaseFieldSchema(Generic[T], TypedDict, total=True):
     """
     Defines how to extract a single piece of data from the HTML.
     """
@@ -22,8 +22,17 @@ class FieldSchema(Generic[T], TypedDict, total=True):
     postformatter: Callable[[Any], Any]
     list_formatter: Callable[[List[Any]], Any]
     
-    url_follow_schema: BaseCrawlerSchema
-    list_subfields: List[FieldSchema]
+class HttpFieldSchema(BaseFieldSchema):
+    url_follow_schema: HTTPCrawlerSchema
+    list_subfields: List[HttpFieldSchema]
+    
+class SyncBrowserFieldSchema(BaseFieldSchema):
+    url_follow_schema: SyncBrowserCrawlerSchema
+    list_subfields: List[SyncBrowserCrawlerSchema]
+  
+class AsyncBrowserFieldSchema(BaseFieldSchema):
+    url_follow_schema: AsyncBrowserCrawlerSchema
+    list_subfields: List[AsyncBrowserCrawlerSchema]
 
 
 # Pagination Schemas
@@ -83,13 +92,13 @@ class ButtonPaginationSchema(TypedDict, total=False):
 class BaseCrawlerSchema(TypedDict, total=False):
     """Common fields shared by all crawlers."""
     base_selector: str
-    fields: List[FieldSchema]
 
 
 class HTTPCrawlerSchema(BaseCrawlerSchema, total=True):
     """
     Schema for HTTP-based crawlers (requests, aiohttp, etc.)
     """
+    fields: List[HttpFieldSchema]
     url_pagination: URLPaginationSchema
     on_pageload: Callable[[Response], None]
 
@@ -117,6 +126,7 @@ class SyncBrowserCrawlerSchema(BrowserCrawlerSchema, total=True):
     Schema for browser-based crawlers (Playwright)
     Supports both scroll and URL pagination.
     """
+    fields: List[SyncBrowserFieldSchema]
     on_pageload: Callable[[SyncPage], None]
     on_scroll: Callable[[SyncPage], None]
     
@@ -126,5 +136,6 @@ class AsyncBrowserCrawlerSchema(BrowserCrawlerSchema, total=True):
     Schema for browser-based crawlers (Playwright)
     Supports both scroll and URL pagination.
     """
+    fields: List[AsyncBrowserFieldSchema]
     on_pageload: Callable[[AsyncPage], None]
     on_scroll: Callable[[AsyncPage], None]
