@@ -13,10 +13,10 @@ class SyncBrowserCrawler:
     nested schemas, list subfields, and full field extraction with formatters.
     """
 
-    def __init__(self, context: BrowserContext = None, headless: bool = True):
+    def __init__(self, context: BrowserContext = None):
         if context is None:
             self.playwright = sync_playwright().start()
-            browser = self.playwright.chromium.launch(headless=headless)
+            browser = self.playwright.chromium.launch(headless=True)
             self.context = browser.new_context()
         else:
             self.context = context
