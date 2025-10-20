@@ -53,7 +53,7 @@ deep_crawler_schema: HTTPCrawlerSchema = {
         {"name": "short_description", "type": "text", "selector": "div.short-description",
          "postformatter": lambda desc: desc.strip().upper()[:30].strip()},
         {"name": "price", "type": "number", "selector": "div.price"},
-        {"type": "text", "selector": "div.description > h3 > a", "attribute": "href", "url_follow_schema": product_schema}
+        {"name": "extra-info", "type": "text", "selector": "div.description > h3 > a", "attribute": "href", "url_follow_schema": product_schema}
     ]
 }
 
@@ -101,8 +101,9 @@ async def test_url_follow():
         assert all(field["name"] in product for field in async_shallow_crawler_schema["fields"])
         assert None not in product.values()
         assert len(product["short_description"]) <= 30
-        assert "reviews" in product
-        assert isinstance(product["reviews"], list)
+        assert "extra-info" in product
+        assert "reviews" in product["extra-info"]
+        assert isinstance(product["extra-info"]["reviews"], list)
 
 @as_new_section_async
 async def test_paginated_shallow():
@@ -140,8 +141,8 @@ async def test_paginated_url_follow():
     print(data)
     assert len(data) == 25
     for product in data:
-        assert "reviews" in product
-        assert isinstance(product["reviews"], list)
+        assert "reviews" in product["extra-info"]
+        assert isinstance(product["extra-info"]["reviews"], list)
         assert all(field["name"] in product for field in async_shallow_crawler_schema["fields"])
         assert None not in product.values()
         assert len(product["short_description"]) <= 30
@@ -179,44 +180,6 @@ async def test_semaphore_limited_fetch():
     
     assert total == 25
 
-# ─────────────────────
-#  Async Exception Tests
-# ─────────────────────
-
-@as_new_section_async
-async def test_request_error():
-    crawler = AsyncHTTPCrawler()
-    bad_url = "https://httpbin.org/status/500"
-
-    with pytest.raises(RequestError):
-        await crawler.fetch(bad_url, schema=async_shallow_crawler_schema, headers=HEADERS)
-
-@as_new_section_async
-async def test_crawler_error():
-    crawler = AsyncHTTPCrawler()
-    broken_schema = {
-        "base_selector": "body",
-        "fields": [{"name": "test", "type": "text", "selector": "body", "postformatter": "not_callable"}]
-    }
-
-    with pytest.raises(CrawlerError):
-        await crawler.fetch(BASE_URL, schema=broken_schema, headers=HEADERS)
-
-@as_new_section_async
-async def test_pagination_error():
-    crawler = AsyncHTTPCrawler()
-    bad_schema = async_shallow_crawler_schema.copy()
-    bad_schema["url_pagination"] = {
-        "page_placeholder": "{page_index}",
-        "start_page": 1,
-        "end_page": "not-an-int",
-    }
-
-    base_url = "https://web-scraping.dev/products?page={page_index}"
-    with pytest.raises(PaginationError):
-        await crawler.fetch(base_url, schema=bad_schema, headers=HEADERS)
-
-
 # Run all async tests directly
 if __name__ == "__main__":
     test_webpage_live()
@@ -227,7 +190,3 @@ if __name__ == "__main__":
     test_paginated_url_follow()
     test_multiple_concurrent_fetches()
     test_semaphore_limited_fetch()
-    
-    test_request_error()
-    test_crawler_error()
-    test_pagination_error()

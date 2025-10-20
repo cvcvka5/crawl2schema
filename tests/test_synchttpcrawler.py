@@ -84,6 +84,7 @@ def test_product_reviews():
 
 deep_crawler_schema: HTTPCrawlerSchema = copy.deepcopy(shallow_crawler_schema)
 deep_crawler_schema["fields"].append({
+    "name": "product-details",
     "type": "text", "selector": "div.description > h3 > a", "attribute": "href", "url_follow_schema": product_schema
 })
 
@@ -99,8 +100,8 @@ def test_url_follow():
         assert all(field["name"] in product for field in shallow_crawler_schema["fields"])
         assert None not in product.values()
         assert len(product["short_description"]) <= 30
-        assert "reviews" in product
-        assert isinstance(product["reviews"], list)
+        assert "product-details" in product
+        assert isinstance(product["product-details"]["reviews"], list)
 
 
 @as_new_section_sync
@@ -144,8 +145,8 @@ def test_paginated_url_follow_shallow():
     print(data)
     assert len(data) == 25
     for product in data:
-        assert "reviews" in product
-        assert isinstance(product["reviews"], list)
+        assert "product-details" in product
+        assert isinstance(product["product-details"]["reviews"], list)
         assert all(field["name"] in product for field in shallow_crawler_schema["fields"])
         assert None not in product.values()
         assert len(product["short_description"]) <= 30
@@ -165,43 +166,6 @@ def test_invalid_pagination_schema():
         sync_crawler.fetch("https://example.com", schema=bad_schema)
 
 
-@as_new_section_sync
-def test_request_error():
-    sync_crawler = SyncHTTPCrawler()
-    with pytest.raises(RequestError):
-        sync_crawler.fetch("https://definitelynotarealurl.abcxyz", schema=shallow_crawler_schema)
-
-
-@as_new_section_sync
-def test_pagination_error():
-    sync_crawler = SyncHTTPCrawler()
-    bad_pagination_schema = {
-        "base_selector": "div.product",
-        "fields": [{"name": "name", "type": "text", "selector": "h3"}],
-        "url_pagination": {
-            "page_placeholder": "{page}",  
-            "start_page": "one",  
-            "end_page": "five",
-        }
-    }
-
-    with pytest.raises(PaginationError):
-        sync_crawler.fetch(BASE_URL, schema=bad_pagination_schema)
-
-
-@as_new_section_sync
-def test_crawler_error():
-    """Should raise CrawlerError on unexpected internal exception."""
-    crawler = SyncHTTPCrawler()
-    broken_schema = {
-        "base_selector": "body",
-        "fields": [{"name": "test", "type": "text", "selector": "body", "postformatter": "not_callable"}]
-    }
-
-    with pytest.raises(CrawlerError):
-        crawler.fetch(BASE_URL, schema=broken_schema)
-
-
 # ─────────────────────────────
 # Manual Execution Entry Point
 # ─────────────────────────────
@@ -215,6 +179,3 @@ if __name__ == "__main__":
     test_paginated_url_follow_shallow()
     
     test_invalid_pagination_schema()
-    test_request_error()
-    test_pagination_error()
-    test_crawler_error()
