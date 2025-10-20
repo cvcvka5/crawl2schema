@@ -9,18 +9,6 @@ import requests
 
 
 class SyncHTTPCrawler:
-    """
-    A synchronous HTML crawler that extracts structured data from web pages
-    based on HTTPCrawlerSchema.
-
-    Features:
-    - base_selector selects multiple parent elements (one record per parent)
-    - fields can extract text, numbers, or lists inside each parent element
-    - supports attributes, default values, preformatter and postformatter callables
-    - supports nested schemas via `url_follow_schema`
-    - supports structured lists via `list_subfields` (list of objects)
-    """
-
     def __init__(self, session: Optional[aiohttp.ClientSession] = None) -> None:
         self.session = session or requests.Session()
         self._close_session = False
@@ -28,7 +16,6 @@ class SyncHTTPCrawler:
     def fetch(self, url: str, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         pagination = schema.get("url_pagination", None)
         on_pageload = schema.get("on_pageload")
-        
         urls: List[str] = []
 
         if pagination is None:
@@ -47,12 +34,11 @@ class SyncHTTPCrawler:
             try:
                 response = self.session.get(url, *args, **kwargs)
                 response.raise_for_status()
-                
-                if on_pageload and callable(on_pageload):
-                    on_pageload(response)
-                
-            except requests.RequestException as e:
+            except Exception as e:
                 raise RequestError(f"Failed to fetch {url}: {e}") from e
+            
+            if on_pageload and callable(on_pageload):
+                on_pageload(response)
 
             try:
                 tree = HTMLParser(response.text)
@@ -63,11 +49,7 @@ class SyncHTTPCrawler:
         return records
 
     def _extract_from_tree(self, tree: HTMLParser, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
-        try:
-            base_elements = tree.css(schema.get("base_selector", "body"))
-        except Exception as e:
-            raise ParseError(f"Invalid base_selector '{schema.get('base_selector')}', error: {e}")
-
+        base_elements = tree.css(schema.get("base_selector", "body"))
         fields: List[HTTPFieldSchema] = schema.get("fields", [])
         records: List[Dict[str, Any]] = []
 
@@ -83,27 +65,28 @@ class SyncHTTPCrawler:
                 url_follow_schema = field.get("url_follow_schema")
 
                 if type_ == "list":
-                    record[field["name"]] = self._extract_list_field(parent, field)
+                    record[field["name"]] = self._extract_list_field(parent, field, *args, **kwargs)
                     continue
 
-                try:
-                    el = parent.css_first(selector) if selector else None
-                except Exception as e:
-                    raise ParseError(f"Invalid selector '{selector}' in field '{field.get('name')}': {e}")
-
+                el = parent.css_first(selector) if selector else None
                 value = default
                 if el:
                     value = el.text() if not attr else el.attributes.get(attr, default)
-                    value: Any = self._apply_formatters(value, preformatter, postformatter, type_, default)
+                    value = self._apply_formatters(value, preformatter, postformatter, type_, default)
 
-                if url_follow_schema and isinstance(value, str):
+                if url_follow_schema and isinstance(value, str) and value:
                     try:
                         nested = self.fetch(value, url_follow_schema, *args, **kwargs)
-                        if isinstance(nested, list):
-                            for item in nested:
-                                record.update(item)
+                        # Merge nested results
+                        if isinstance(nested, list) and len(nested) == 1:
+                            record[field["name"]] = nested[0]
+                        elif isinstance(nested, list):
+                            nested_obj = {}
+                            for n in nested:
+                                nested_obj.update(n)
+                            record[field["name"]] = nested_obj
                         else:
-                            record.update(nested)
+                            record[field["name"]] = nested
                     except Exception as e:
                         raise CrawlerError(f"Nested fetch failed for {value}: {e}") from e
                 else:
@@ -111,9 +94,9 @@ class SyncHTTPCrawler:
             records.append(record)
         return records
 
-    def _extract_list_field(self, parent, field: HTTPFieldSchema):
+    def _extract_list_field(self, parent, field: HTTPFieldSchema, *args, **kwargs):
         values: List[Any] = []
-        selector = field["selector"]
+        selector = field.get("selector")
         attr = field.get("attribute")
         default = field.get("default")
         type_ = field.get("type", "text")
@@ -125,43 +108,46 @@ class SyncHTTPCrawler:
         for el in parent.css(selector):
             if list_subfields:
                 obj: Dict[str, Any] = {}
-                for subfield in list_subfields:
-                    try:
-                        subel = el.css_first(subfield["selector"])
-                    except Exception as e:
-                        raise ParseError(f"Invalid sub-selector '{subfield['selector']}' in list field '{field['name']}': {e}")
-
-                    subattr = subfield.get("attribute")
-                    subdefault = subfield.get("default")
-                    subtype = subfield.get("type", "text")
-                    sub_pre = subfield.get("preformatter")
-                    sub_post = subfield.get("postformatter")
-
+                for sub in list_subfields:
+                    subel = el.css_first(sub["selector"])
+                    subattr = sub.get("attribute")
+                    subdefault = sub.get("default")
+                    subtype = sub.get("type", "text")
+                    sub_pre = sub.get("preformatter")
+                    sub_post = sub.get("postformatter")
                     subval = subdefault
+
                     if subel:
                         subval = subel.text() if not subattr else subel.attributes.get(subattr, subdefault)
-                        if subval != subdefault:                
-                            subval = self._apply_formatters(subval, sub_pre, sub_post, subtype, subdefault)
-                    
-                    obj[subfield["name"]] = subval
+                        subval = self._apply_formatters(subval, sub_pre, sub_post, subtype, subdefault)
+
+                    if "url_follow_schema" in sub and isinstance(subval, str) and subval:
+                        nested = self.fetch(subval, sub["url_follow_schema"], *args, **kwargs)
+                        if isinstance(nested, list) and len(nested) == 1:
+                            obj[sub["name"]] = nested[0]
+                        elif isinstance(nested, list):
+                            nested_obj = {}
+                            for n in nested:
+                                nested_obj.update(n)
+                            obj[sub["name"]] = nested_obj
+                        else:
+                            obj[sub["name"]] = nested
+                    else:
+                        obj[sub["name"]] = subval
                 values.append(obj)
             else:
                 val = el.text() if not attr else el.attributes.get(attr, default)
                 if val != default:
                     val = self._apply_formatters(val, preformatter, postformatter, type_, default)
                 values.append(val)
-        
+
         if list_formatter and callable(list_formatter):
             values = list_formatter(values)
-        
         return values
 
     def _apply_formatters(self, value, pre, post, type_, default):
         if pre:
-            try:
-                value = pre(value)
-            except Exception as e:
-                raise FormatterError(f"Preformatter failed on value '{value}': {e}") from e
+            value = pre(value)
         try:
             if type_ == "number":
                 value = float(value)
@@ -174,10 +160,7 @@ class SyncHTTPCrawler:
         except Exception as e:
             raise FormatterError(f"Failed to cast '{value}' to {type_}: {e}") from e
         if post:
-            try:
-                value = post(value)
-            except Exception as e:
-                raise FormatterError(f"Postformatter failed on value '{value}': {e}") from e
+            value = post(value)
         return value
 
     def __enter__(self):
@@ -192,96 +175,54 @@ class SyncHTTPCrawler:
 
 
 class AsyncHTTPCrawler:
-    """
-    Fully asynchronous HTML crawler.
-
-    Features:
-    - Supports text, number, json, list fields
-    - Handles attributes, default values, pre/postformatters
-    - Nested schemas via url_follow_schema
-    - Structured lists via list_subfields
-    - Pagination support
-    - Optional external session reuse
-    - Concurrency limit via semaphore
-    """
-
-    def __init__(
-        self,
-        session: Optional[aiohttp.ClientSession] = None,
-        max_concurrency: int = 10,
-        timeout: int = 20
-    ) -> None:
+    def __init__(self, session: Optional[aiohttp.ClientSession] = None, max_concurrency: int = 10, timeout: int = 20):
         self.external_session = session
         self.session: Optional[aiohttp.ClientSession] = session
         self.semaphore = asyncio.Semaphore(max_concurrency)
         self.timeout = aiohttp.ClientTimeout(total=timeout)
+        self._close_session = False
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self.session is None or self.session.closed:
-            connector = aiohttp.TCPConnector(limit_per_host=10, ssl=False)
-            self.session = aiohttp.ClientSession(connector=connector, timeout=self.timeout)
+            self.session = aiohttp.ClientSession(timeout=self.timeout)
+            self._close_session = True
         return self.session
 
     async def close(self):
-        """Close session if it was internally created."""
-        if self.session and not self.session.closed and not self.external_session:
+        if self.session and not self.session.closed and self._close_session:
             await self.session.close()
 
     async def fetch(self, url: str, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
-        """Fetch data from a URL or paginated URLs using the provided schema."""
         pagination = schema.get("url_pagination")
         urls: List[str] = []
 
         if pagination is None:
             urls = [url]
         else:
-            try:
-                start = pagination.get("start_page", 1)
-                end = pagination["end_page"]
-                placeholder = pagination.get("page_placeholder", "{page}")
-                urls = [url.replace(placeholder, str(i)) for i in range(start, end + 1)]
-            except Exception as e:
-                raise PaginationError(f"Invalid pagination schema: {e}")
-
+            start = pagination.get("start_page", 1)
+            end = pagination["end_page"]
+            placeholder = pagination.get("page_placeholder", "{page}")
+            urls = [url.replace(placeholder, str(i)) for i in range(start, end + 1)]
 
         tasks = [self._fetch_page(u, schema, *args, **kwargs) for u in urls]
-
-        try:
-            results = await asyncio.gather(*tasks)
-        except Exception as e:
-            raise RequestError(f"Async fetch failed: {e}") from e
-
+        results = await asyncio.gather(*tasks)
         return [r for sublist in results for r in sublist]
 
     async def _fetch_page(self, url: str, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         on_pageload = schema.get("on_pageload")
-        
         async with self.semaphore:
             session = await self._get_session()
-            try:
-                async with session.get(url, *args, **kwargs) as resp:
-                    resp.raise_for_status()
-                    
-                    if on_pageload and callable(on_pageload):
-                        on_pageload(resp)
-                    
-                    html = await resp.text()
-            except aiohttp.ClientError as e:
-                raise RequestError(f"Failed to fetch {url}: {e}") from e
+            async with session.get(url, *args, **kwargs) as resp:
+                resp.raise_for_status()
+                if on_pageload and callable(on_pageload):
+                    on_pageload(resp)
+                html = await resp.text()
 
-            try:
-                tree = HTMLParser(html)
-            except Exception as e:
-                raise ParseError(f"Failed to parse HTML from {url}: {e}") from e
-
+            tree = HTMLParser(html)
             return await self._extract_from_tree(tree, schema, *args, **kwargs)
 
-    async def _extract_from_tree(self, tree: HTMLParser, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
-        try:
-            base_elements = tree.css(schema.get("base_selector", "body"))
-        except Exception as e:
-            raise ParseError(f"Invalid base_selector '{schema.get('base_selector')}', error: {e}")
-
+    async def _extract_from_tree(self, tree: HTMLParser, schema: HTTPCrawlerSchema, *args, **kwargs):
+        base_elements = tree.css(schema.get("base_selector", "body"))
         fields: List[HTTPFieldSchema] = schema.get("fields", [])
         records: List[Dict[str, Any]] = []
 
@@ -292,41 +233,37 @@ class AsyncHTTPCrawler:
                 attr = field.get("attribute")
                 default = field.get("default")
                 type_ = field.get("type", "text")
-                preformatter: Optional[Callable] = field.get("preformatter")
-                postformatter: Optional[Callable] = field.get("postformatter")
+                preformatter = field.get("preformatter")
+                postformatter = field.get("postformatter")
                 url_follow_schema = field.get("url_follow_schema")
 
                 if type_ == "list":
                     record[field["name"]] = await self._extract_list_field(parent, field, *args, **kwargs)
                     continue
 
-                try:
-                    el = parent.css_first(selector) if selector else None
-                except Exception as e:
-                    raise ParseError(f"Invalid selector '{selector}' in field '{field.get('name')}': {e}")
-
+                el = parent.css_first(selector) if selector else None
                 value = default
                 if el:
-                    value = el.attributes.get(field.get("attribute"), value) if "attribute" in field else el.text()
+                    value = el.text() if not attr else el.attributes.get(attr, default)
                     value = self._apply_formatters(value, preformatter, postformatter, type_, default)
 
-                if url_follow_schema and isinstance(value, str):
-                    try:
-                        nested = await self.fetch(value, url_follow_schema, *args, **kwargs)
-                        if isinstance(nested, list):
-                            for item in nested:
-                                record.update(item)
-                        else:
-                            record.update(nested)
-                    except Exception as e:
-                        raise CrawlerError(f"Nested async fetch failed for {value}: {e}") from e
+                if url_follow_schema and isinstance(value, str) and value:
+                    nested = await self.fetch(value, url_follow_schema, *args, **kwargs)
+                    if isinstance(nested, list) and len(nested) == 1:
+                        record[field["name"]] = nested[0]
+                    elif isinstance(nested, list):
+                        nested_obj = {}
+                        for n in nested:
+                            nested_obj.update(n)
+                        record[field["name"]] = nested_obj
+                    else:
+                        record[field["name"]] = nested
                 else:
                     record[field["name"]] = value
-
             records.append(record)
         return records
 
-    async def _extract_list_field(self, parent, field: HTTPFieldSchema, *args, **kwargs) -> List[Any]:
+    async def _extract_list_field(self, parent, field: HTTPFieldSchema, *args, **kwargs):
         values: List[Any] = []
         selector = field.get("selector")
         attr = field.get("attribute")
@@ -340,42 +277,45 @@ class AsyncHTTPCrawler:
         for el in parent.css(selector):
             if list_subfields:
                 obj: Dict[str, Any] = {}
-                for subfield in list_subfields:
-                    try:
-                        subel = el.css_first(subfield["selector"])
-                    except Exception as e:
-                        raise ParseError(f"Invalid sub-selector '{subfield['selector']}' in list field '{field['name']}': {e}")
-
-                    subattr = subfield.get("attribute")
-                    subdefault = subfield.get("default")
-                    subtype = subfield.get("type", "text")
-                    sub_pre = subfield.get("preformatter")
-                    sub_post = subfield.get("postformatter")
-
+                for sub in list_subfields:
+                    subel = el.css_first(sub["selector"])
+                    subattr = sub.get("attribute")
+                    subdefault = sub.get("default")
+                    subtype = sub.get("type", "text")
+                    sub_pre = sub.get("preformatter")
+                    sub_post = sub.get("postformatter")
                     subval = subdefault
                     if subel:
                         subval = subel.text() if not subattr else subel.attributes.get(subattr, subdefault)
-                        if subval != subdefault:
-                            subval = self._apply_formatters(subval, sub_pre, sub_post, subtype, subdefault)
-                    obj[subfield["name"]] = subval
+                        subval = self._apply_formatters(subval, sub_pre, sub_post, subtype, subdefault)
+
+                    if "url_follow_schema" in sub and isinstance(subval, str) and subval:
+                        nested = await self.fetch(subval, sub["url_follow_schema"], *args, **kwargs)
+                        if isinstance(nested, list) and len(nested) == 1:
+                            obj[sub["name"]] = nested[0]
+                        elif isinstance(nested, list):
+                            nested_obj = {}
+                            for n in nested:
+                                nested_obj.update(n)
+                            obj[sub["name"]] = nested_obj
+                        else:
+                            obj[sub["name"]] = nested
+                    else:
+                        obj[sub["name"]] = subval
                 values.append(obj)
             else:
                 val = el.text() if not attr else el.attributes.get(attr, default)
                 if val != default:
                     val = self._apply_formatters(val, preformatter, postformatter, type_, default)
                 values.append(val)
-                
+
         if list_formatter and callable(list_formatter):
             values = list_formatter(values)
-        
         return values
 
     def _apply_formatters(self, value, pre, post, type_, default):
         if pre:
-            try:
-                value = pre(value)
-            except Exception as e:
-                raise FormatterError(f"Preformatter failed on value '{value}': {e}") from e
+            value = pre(value)
         try:
             if type_ == "number":
                 value = float(value)
@@ -388,10 +328,7 @@ class AsyncHTTPCrawler:
         except Exception as e:
             raise FormatterError(f"Failed to cast '{value}' to {type_}: {e}") from e
         if post:
-            try:
-                value = post(value)
-            except Exception as e:
-                raise FormatterError(f"Postformatter failed on value '{value}': {e}") from e
+            value = post(value)
         return value
 
     async def __aenter__(self):
@@ -401,5 +338,5 @@ class AsyncHTTPCrawler:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if getattr(self, "_close_session", False) and self.session:
+        if self._close_session and self.session:
             await self.session.close()
