@@ -28,7 +28,7 @@ schema: BrowserCrawlerSchema = {
         { "name": "url", "selector": "a", "type": "text", "attribute": "href" }
     ],
     "url_pagination": {
-        "end_page": 20
+        "end_page": 4
     },
     "wait_for_selector": { "selector": "li.s-card[id^=item]"}
 }
