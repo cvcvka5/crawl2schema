@@ -28,20 +28,27 @@ class SyncBrowserCrawler:
             return self._handle_url_pagination(url, schema=schema, *args, **kwargs)
 
         try:
+            wait_for_selector = schema.get("wait_for_selector")
+            
             self.page.goto(url, *args, **kwargs)
+            
+            if wait_for_selector:
+                self.page.wait_for_selector(**wait_for_selector)
+            
             if on_pageload and callable(on_pageload):
                 on_pageload(self.page)
 
-            wait_for_selector = schema.get("wait_for_selector")
-            if wait_for_selector:
-                self.page.wait_for_selector(**wait_for_selector)
         except Exception as e:
             raise RequestError(f"Failed to crawl {url}: {e}")
 
         if "scroll_pagination" in schema and schema["scroll_pagination"]:
             self._handle_scroll_pagination(schema)
         elif "button_pagination" in schema and schema["button_pagination"]:
-            self._handle_button_pagination(schema)
+            append_more = schema["button_pagination"].get("append_more", False)
+            if append_more:
+                return self._handle_button_pagination(schema)
+            else:
+                self._handle_button_pagination(schema)
 
         return self._extract_data(schema)
 
@@ -132,23 +139,24 @@ class SyncBrowserCrawler:
             page_url = url.replace(placeholder, str(i))
             self.page.goto(page_url, *args, **kwargs)
 
+            if wait_for_selector:
+                self.page.wait_for_selector(**wait_for_selector)
+            
             if on_pageload and callable(on_pageload):
                 on_pageload(self.page)
 
-            if wait_for_selector:
-                self.page.wait_for_selector(**wait_for_selector)
 
             time.sleep(1.5)
             results.extend(self._extract_data(schema))
 
         return results
 
-    def _handle_button_pagination(self, schema: SyncBrowserCrawlerSchema):
-        # Button pagination handling (same as previous)
+    def _handle_button_pagination(self, schema: SyncBrowserCrawlerSchema) -> List[Dict[str, Any]]:
         pagination = schema.get("button_pagination")
         if not pagination:
-            return
+            return []
 
+        results = []
         scroll_distance = pagination.get("scroll_distance", 0)
         cycle_delay = pagination.get("cycle_delay", 1.5)
         retry_delay = pagination.get("retry_delay", 2)
@@ -158,7 +166,7 @@ class SyncBrowserCrawler:
         scroll_horizontal = pagination.get("scroll_horizontal", False)
         stop_condition = pagination.get("stop_condition", "no-button")
         button_selector = pagination.get("button_selector")
-        base_selector = schema.get("base_selector")
+        append_more = pagination.get("append_more", False)
         total_scrolls = 0
         retry_counter = 0
         total_clicks = 0
@@ -166,7 +174,11 @@ class SyncBrowserCrawler:
         stop_selector = pagination.get("stop_selector") if stop_condition == "element" else None
         on_scroll = schema.get("on_scroll")
 
+        if append_more:
+            results.extend(self._extract_data(schema))
+        
         while True:
+            # optional scroll between clicks
             if scroll_distance != 0:
                 if scroll_selector == "window":
                     if scroll_horizontal:
@@ -204,7 +216,6 @@ class SyncBrowserCrawler:
                                 self.page.locator(scroll_selector).evaluate(
                                     f"(el) => el.scrollBy(0, {retry_scroll_distance})"
                                 )
-
                     time.sleep(retry_delay)
                     continue
                 elif stop_condition == "no-button":
@@ -212,24 +223,28 @@ class SyncBrowserCrawler:
                 else:
                     raise CrawlerError("Button to load more dynamic content not detected.")
 
+            # Extract before clicking (to include current page)
             button.first.click()
             total_clicks += 1
             time.sleep(cycle_delay)
 
-            html = self.page.content()
-            tree = HTMLParser(html)
+            if append_more:
+                results.extend(self._extract_data(schema))
 
+            # stop conditions
             if stop_condition == "count" and total_clicks >= max_clicks:
                 break
             elif stop_condition == "element" and stop_selector:
                 stop_elements = self.page.locator(stop_selector)
                 if stop_elements.count() > 0 and stop_elements.first.is_visible():
                     break
-            if "scroll_count" in pagination and total_scrolls >= pagination["scroll_count"]:
+            elif "scroll_count" in pagination and total_scrolls >= pagination["scroll_count"]:
                 break
             elif "stop_selector" in pagination and pagination["stop_selector"]:
                 if self.page.locator(pagination["stop_selector"]).count() > 0:
                     break
+
+        return results
 
     def _extract_data(self, schema: SyncBrowserCrawlerSchema) -> List[Dict[str, Any]]:
         html = self.page.content()
