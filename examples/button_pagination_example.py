@@ -1,8 +1,13 @@
 from crawl2schema.crawler.browser import SyncBrowserCrawler
 from crawl2schema.crawler.schema import BrowserCrawlerSchema
 from pprint import pprint
+from playwright.sync_api import sync_playwright
 
-crawler = SyncBrowserCrawler(headless=False)
+p = sync_playwright().start()
+b = p.chromium.launch(headless=False)
+context = b.new_context()
+
+crawler = SyncBrowserCrawler(context=context)
 schema: BrowserCrawlerSchema = {
     "base_selector": "div.review",
     "fields": [
@@ -17,7 +22,8 @@ schema: BrowserCrawlerSchema = {
         "retry_scroll_distance": -100,
         "retry_delay": 2,
         "cycle_delay": 1,
-        "scroll_distance": 9999
+        "scroll_distance": 9999,
+        "append_more": False
     }
 }
 
