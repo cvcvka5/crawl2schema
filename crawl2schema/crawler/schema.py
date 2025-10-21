@@ -68,6 +68,7 @@ class ScrollPaginationSchema(TypedDict, total=False):
 class ButtonPaginationSchema(TypedDict, total=False):
     stop_condition: Literal["count", "element", "no-button"]
     button_selector: str
+    append_more: bool
     
     # Scroll-like options (optional)
     scroll_distance: int
