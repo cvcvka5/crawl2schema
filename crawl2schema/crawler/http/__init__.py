@@ -254,7 +254,9 @@ class AsyncHTTPCrawler:
                 async with session.get(url, *args, **kwargs) as resp:
                     resp.raise_for_status()
                     if on_pageload and callable(on_pageload):
-                        on_pageload(resp)
+                        callback_result = on_pageload(resp)
+                        if asyncio.iscoroutine(callback_result):
+                            await callback_result
                     html = await resp.text()
             except Exception as e:
                 raise RequestError(f"Failed to fetch {url}: {e}") from e

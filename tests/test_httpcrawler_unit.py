@@ -176,3 +176,28 @@ def test_async_wraps_request_errors():
             await crawler.fetch("https://example.com", schema=schema)
 
     asyncio.run(run())
+
+
+def test_async_supports_async_on_pageload_callback():
+    async def run():
+        main_url = "https://example.com/products"
+        session = FakeAsyncSession(
+            {
+                main_url: "<div class='product'><h3>Item</h3></div>",
+            }
+        )
+        crawler = AsyncHTTPCrawler(session=session)
+        callback_log = []
+
+        async def on_pageload(resp):
+            callback_log.append(resp.status_code)
+
+        schema = {
+            "base_selector": "div.product",
+            "fields": [{"name": "name", "selector": "h3", "type": "text"}],
+            "on_pageload": on_pageload,
+        }
+        await crawler.fetch(main_url, schema=schema)
+        assert callback_log == [200]
+
+    asyncio.run(run())
