@@ -43,6 +43,14 @@ class URLPaginationSchema(TypedDict, total=False):
     start_page: int
     end_page: int
 
+class RequestRetrySchema(TypedDict, total=False):
+    attempts: int
+    delay: float
+    backoff: float
+    max_delay: float
+    retry_on_status: List[int]
+    retry_on_exceptions: bool
+
 
 # ---- Scroll Pagination ----
 class ScrollPaginationSchema(TypedDict, total=False):
@@ -102,6 +110,8 @@ class HTTPCrawlerSchema(BaseCrawlerSchema, total=True):
     fields: List[HTTPFieldSchema]
     url_pagination: URLPaginationSchema
     on_pageload: Callable[[Response], None]
+    request_retry: RequestRetrySchema
+    cache_nested_requests: bool
 
 
 class WaitForSelectorArgs(TypedDict, total=False):
@@ -120,6 +130,10 @@ class BrowserCrawlerSchema(BaseCrawlerSchema, total=True):
     scroll_pagination: ScrollPaginationSchema
     button_pagination: ButtonPaginationSchema
     url_pagination: URLPaginationSchema
+    block_resource_types: List[Literal["image", "media", "font", "stylesheet", "xhr", "fetch", "websocket", "other"]]
+    request_delay: float
+    jitter_delay: float
+    stealth_mode: bool
     
 
 class SyncBrowserCrawlerSchema(BrowserCrawlerSchema, total=True):
@@ -140,3 +154,4 @@ class AsyncBrowserCrawlerSchema(BrowserCrawlerSchema, total=True):
     fields: List[AsyncBrowserFieldSchema]
     on_pageload: Callable[[AsyncPage], None]
     on_scroll: Callable[[AsyncPage], None]
+

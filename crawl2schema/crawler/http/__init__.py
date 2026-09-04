@@ -1,10 +1,12 @@
-from typing import List, Dict, Any, Callable, Optional
+from typing import List, Dict, Any, Callable, Optional, Tuple
 import asyncio
 import aiohttp
 import json
+import time
+import copy
 from urllib.parse import urljoin
 from selectolax.parser import HTMLParser
-from ..schema import HTTPCrawlerSchema, HTTPFieldSchema, URLPaginationSchema
+from ..schema import HTTPCrawlerSchema, HTTPFieldSchema, URLPaginationSchema, RequestRetrySchema
 from ...exceptions import InvalidSchema, CrawlerError, FormatterError, PaginationError, ParseError, RequestError
 import requests
 
@@ -13,39 +15,81 @@ class SyncHTTPCrawler:
     def __init__(self, session: Optional[requests.Session] = None) -> None:
         self.session = session or requests.Session()
         self._close_session = session is None
+        self._nested_cache: Dict[Tuple[str, int], Any] = {}
 
     def fetch(self, url: str, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
         self._validate_schema(schema)
         pagination = schema.get("url_pagination", None)
         on_pageload = schema.get("on_pageload")
         urls = self._build_paginated_urls(url, pagination)
+        retry_config = self._get_retry_config(schema)
+        cache_nested_requests = schema.get("cache_nested_requests", True)
 
         records: List[Dict[str, Any]] = []
-        for url in urls:
-            try:
-                response = self.session.get(url, *args, **kwargs)
-                response.raise_for_status()
-            except Exception as e:
-                raise RequestError(f"Failed to fetch {url}: {e}") from e
-            
+        for page_url in urls:
+            response = self._request_with_retries(page_url, retry_config, *args, **kwargs)
+
             if on_pageload and callable(on_pageload):
                 on_pageload(response)
 
             try:
                 tree = HTMLParser(response.text)
             except Exception as e:
-                raise ParseError(f"Failed to parse HTML from {url}: {e}") from e
+                raise ParseError(f"Failed to parse HTML from {page_url}: {e}") from e
 
-            records.extend(self._extract_from_tree(tree, schema, source_url=url, *args, **kwargs))
+            records.extend(
+                self._extract_from_tree(
+                    tree,
+                    schema,
+                    source_url=page_url,
+                    retry_config=retry_config,
+                    cache_nested_requests=cache_nested_requests,
+                    *args,
+                    **kwargs,
+                )
+            )
         return records
+
+    def _request_with_retries(self, url: str, retry_config: RequestRetrySchema, *args, **kwargs):
+        attempts = retry_config["attempts"]
+        retry_on_status = set(retry_config["retry_on_status"])
+        retry_on_exceptions = retry_config["retry_on_exceptions"]
+        delay = retry_config["delay"]
+        backoff = retry_config["backoff"]
+        max_delay = retry_config["max_delay"]
+
+        current_delay = delay
+        last_error: Optional[Exception] = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                response = self.session.get(url, *args, **kwargs)
+                response.raise_for_status()
+                return response
+            except Exception as e:
+                last_error = e
+                status = getattr(getattr(e, "response", None), "status_code", None)
+                status_retryable = status in retry_on_status
+                should_retry = status_retryable or retry_on_exceptions
+
+                if not should_retry or attempt >= attempts:
+                    raise RequestError(f"Failed to fetch {url}: {e}") from e
+
+                if current_delay > 0:
+                    time.sleep(current_delay)
+                    current_delay = min(current_delay * backoff, max_delay)
+
+        raise RequestError(f"Failed to fetch {url}: {last_error}")
 
     def _extract_from_tree(
         self,
         tree: HTMLParser,
         schema: HTTPCrawlerSchema,
         source_url: str,
+        retry_config: RequestRetrySchema,
+        cache_nested_requests: bool,
         *args,
-        **kwargs
+        **kwargs,
     ) -> List[Dict[str, Any]]:
         base_elements = tree.css(schema.get("base_selector", "body"))
         fields: List[HTTPFieldSchema] = schema.get("fields", [])
@@ -67,6 +111,8 @@ class SyncHTTPCrawler:
                         parent,
                         field,
                         source_url=source_url,
+                        retry_config=retry_config,
+                        cache_nested_requests=cache_nested_requests,
                         *args,
                         **kwargs,
                     )
@@ -81,17 +127,15 @@ class SyncHTTPCrawler:
                 if url_follow_schema and isinstance(value, str) and value:
                     try:
                         nested_url = self._resolve_url(source_url, value)
-                        nested = self.fetch(nested_url, url_follow_schema, *args, **kwargs)
-                        # Merge nested results
-                        if isinstance(nested, list) and len(nested) == 1:
-                            record[field["name"]] = nested[0]
-                        elif isinstance(nested, list):
-                            nested_obj = {}
-                            for n in nested:
-                                nested_obj.update(n)
-                            record[field["name"]] = nested_obj
-                        else:
-                            record[field["name"]] = nested
+                        nested = self._fetch_nested(
+                            nested_url,
+                            url_follow_schema,
+                            retry_config,
+                            cache_nested_requests,
+                            *args,
+                            **kwargs,
+                        )
+                        record[field["name"]] = self._merge_nested_records(nested)
                     except Exception as e:
                         raise CrawlerError(f"Nested fetch failed for {value}: {e}") from e
                 else:
@@ -99,7 +143,16 @@ class SyncHTTPCrawler:
             records.append(record)
         return records
 
-    def _extract_list_field(self, parent, field: HTTPFieldSchema, source_url: str, *args, **kwargs):
+    def _extract_list_field(
+        self,
+        parent,
+        field: HTTPFieldSchema,
+        source_url: str,
+        retry_config: RequestRetrySchema,
+        cache_nested_requests: bool,
+        *args,
+        **kwargs,
+    ):
         values: List[Any] = []
         selector = field.get("selector")
         attr = field.get("attribute")
@@ -128,16 +181,15 @@ class SyncHTTPCrawler:
 
                     if "url_follow_schema" in sub and isinstance(subval, str) and subval:
                         nested_url = self._resolve_url(source_url, subval)
-                        nested = self.fetch(nested_url, sub["url_follow_schema"], *args, **kwargs)
-                        if isinstance(nested, list) and len(nested) == 1:
-                            obj[sub["name"]] = nested[0]
-                        elif isinstance(nested, list):
-                            nested_obj = {}
-                            for n in nested:
-                                nested_obj.update(n)
-                            obj[sub["name"]] = nested_obj
-                        else:
-                            obj[sub["name"]] = nested
+                        nested = self._fetch_nested(
+                            nested_url,
+                            sub["url_follow_schema"],
+                            retry_config,
+                            cache_nested_requests,
+                            *args,
+                            **kwargs,
+                        )
+                        obj[sub["name"]] = self._merge_nested_records(nested)
                     else:
                         obj[sub["name"]] = subval
                 values.append(obj)
@@ -150,6 +202,24 @@ class SyncHTTPCrawler:
         if list_formatter and callable(list_formatter):
             values = list_formatter(values)
         return values
+
+    def _fetch_nested(
+        self,
+        nested_url: str,
+        nested_schema: HTTPCrawlerSchema,
+        retry_config: RequestRetrySchema,
+        cache_nested_requests: bool,
+        *args,
+        **kwargs,
+    ):
+        cache_key = (nested_url, id(nested_schema))
+        if cache_nested_requests and cache_key in self._nested_cache:
+            return copy.deepcopy(self._nested_cache[cache_key])
+
+        nested = self.fetch(nested_url, nested_schema, *args, **kwargs)
+        if cache_nested_requests:
+            self._nested_cache[cache_key] = copy.deepcopy(nested)
+        return nested
 
     def _apply_formatters(self, value, pre, post, type_, default):
         if pre:
@@ -208,8 +278,38 @@ class SyncHTTPCrawler:
                 raise InvalidSchema("list fields must define selector")
 
     @staticmethod
+    def _merge_nested_records(nested):
+        if isinstance(nested, list) and len(nested) == 1:
+            return nested[0]
+        if isinstance(nested, list):
+            nested_obj = {}
+            for item in nested:
+                if isinstance(item, dict):
+                    nested_obj.update(item)
+            return nested_obj
+        return nested
+
+    @staticmethod
     def _resolve_url(source_url: str, candidate_url: str) -> str:
         return urljoin(source_url, candidate_url)
+
+    @staticmethod
+    def _get_retry_config(schema: HTTPCrawlerSchema) -> RequestRetrySchema:
+        retry = schema.get("request_retry", {})
+        attempts = max(1, int(retry.get("attempts", 1)))
+        delay = max(0.0, float(retry.get("delay", 0.0)))
+        backoff = max(1.0, float(retry.get("backoff", 2.0)))
+        max_delay = max(0.0, float(retry.get("max_delay", 30.0)))
+        retry_on_status = list(retry.get("retry_on_status", [429, 500, 502, 503, 504]))
+        retry_on_exceptions = bool(retry.get("retry_on_exceptions", True))
+        return {
+            "attempts": attempts,
+            "delay": delay,
+            "backoff": backoff,
+            "max_delay": max_delay,
+            "retry_on_status": retry_on_status,
+            "retry_on_exceptions": retry_on_exceptions,
+        }
 
     def __enter__(self):
         return self
@@ -226,6 +326,7 @@ class AsyncHTTPCrawler:
         self.semaphore = asyncio.Semaphore(max_concurrency)
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self._close_session = False
+        self._nested_cache: Dict[Tuple[str, int], Any] = {}
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self.session is None or self.session.closed:
@@ -241,39 +342,96 @@ class AsyncHTTPCrawler:
         self._validate_schema(schema)
         pagination = schema.get("url_pagination")
         urls = self._build_paginated_urls(url, pagination)
+        retry_config = self._get_retry_config(schema)
+        cache_nested_requests = schema.get("cache_nested_requests", True)
 
-        tasks = [self._fetch_page(u, schema, *args, **kwargs) for u in urls]
+        tasks = [
+            self._fetch_page(
+                page_url,
+                schema,
+                retry_config=retry_config,
+                cache_nested_requests=cache_nested_requests,
+                *args,
+                **kwargs,
+            )
+            for page_url in urls
+        ]
         results = await asyncio.gather(*tasks)
         return [r for sublist in results for r in sublist]
 
-    async def _fetch_page(self, url: str, schema: HTTPCrawlerSchema, *args, **kwargs) -> List[Dict[str, Any]]:
-        on_pageload = schema.get("on_pageload")
-        async with self.semaphore:
+    async def _request_with_retries(self, url: str, retry_config: RequestRetrySchema, *args, **kwargs):
+        attempts = retry_config["attempts"]
+        retry_on_status = set(retry_config["retry_on_status"])
+        retry_on_exceptions = retry_config["retry_on_exceptions"]
+        delay = retry_config["delay"]
+        backoff = retry_config["backoff"]
+        max_delay = retry_config["max_delay"]
+
+        current_delay = delay
+        last_error: Optional[Exception] = None
+
+        for attempt in range(1, attempts + 1):
             try:
                 session = await self._get_session()
                 async with session.get(url, *args, **kwargs) as resp:
                     resp.raise_for_status()
-                    if on_pageload and callable(on_pageload):
-                        callback_result = on_pageload(resp)
-                        if asyncio.iscoroutine(callback_result):
-                            await callback_result
                     html = await resp.text()
+                    return resp, html
             except Exception as e:
-                raise RequestError(f"Failed to fetch {url}: {e}") from e
+                last_error = e
+                status = getattr(e, "status", None)
+                status_retryable = status in retry_on_status if status is not None else False
+                should_retry = status_retryable or retry_on_exceptions
+
+                if not should_retry or attempt >= attempts:
+                    raise RequestError(f"Failed to fetch {url}: {e}") from e
+
+                if current_delay > 0:
+                    await asyncio.sleep(current_delay)
+                    current_delay = min(current_delay * backoff, max_delay)
+
+        raise RequestError(f"Failed to fetch {url}: {last_error}")
+
+    async def _fetch_page(
+        self,
+        url: str,
+        schema: HTTPCrawlerSchema,
+        retry_config: RequestRetrySchema,
+        cache_nested_requests: bool,
+        *args,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        on_pageload = schema.get("on_pageload")
+        async with self.semaphore:
+            resp, html = await self._request_with_retries(url, retry_config, *args, **kwargs)
+            if on_pageload and callable(on_pageload):
+                callback_result = on_pageload(resp)
+                if asyncio.iscoroutine(callback_result):
+                    await callback_result
 
             try:
                 tree = HTMLParser(html)
             except Exception as e:
                 raise ParseError(f"Failed to parse HTML from {url}: {e}") from e
-            return await self._extract_from_tree(tree, schema, source_url=url, *args, **kwargs)
+            return await self._extract_from_tree(
+                tree,
+                schema,
+                source_url=url,
+                retry_config=retry_config,
+                cache_nested_requests=cache_nested_requests,
+                *args,
+                **kwargs,
+            )
 
     async def _extract_from_tree(
         self,
         tree: HTMLParser,
         schema: HTTPCrawlerSchema,
         source_url: str,
+        retry_config: RequestRetrySchema,
+        cache_nested_requests: bool,
         *args,
-        **kwargs
+        **kwargs,
     ):
         base_elements = tree.css(schema.get("base_selector", "body"))
         fields: List[HTTPFieldSchema] = schema.get("fields", [])
@@ -295,6 +453,8 @@ class AsyncHTTPCrawler:
                         parent,
                         field,
                         source_url=source_url,
+                        retry_config=retry_config,
+                        cache_nested_requests=cache_nested_requests,
                         *args,
                         **kwargs,
                     )
@@ -308,22 +468,30 @@ class AsyncHTTPCrawler:
 
                 if url_follow_schema and isinstance(value, str) and value:
                     nested_url = self._resolve_url(source_url, value)
-                    nested = await self.fetch(nested_url, url_follow_schema, *args, **kwargs)
-                    if isinstance(nested, list) and len(nested) == 1:
-                        record[field["name"]] = nested[0]
-                    elif isinstance(nested, list):
-                        nested_obj = {}
-                        for n in nested:
-                            nested_obj.update(n)
-                        record[field["name"]] = nested_obj
-                    else:
-                        record[field["name"]] = nested
+                    nested = await self._fetch_nested(
+                        nested_url,
+                        url_follow_schema,
+                        retry_config,
+                        cache_nested_requests,
+                        *args,
+                        **kwargs,
+                    )
+                    record[field["name"]] = self._merge_nested_records(nested)
                 else:
                     record[field["name"]] = value
             records.append(record)
         return records
 
-    async def _extract_list_field(self, parent, field: HTTPFieldSchema, source_url: str, *args, **kwargs):
+    async def _extract_list_field(
+        self,
+        parent,
+        field: HTTPFieldSchema,
+        source_url: str,
+        retry_config: RequestRetrySchema,
+        cache_nested_requests: bool,
+        *args,
+        **kwargs,
+    ):
         values: List[Any] = []
         selector = field.get("selector")
         attr = field.get("attribute")
@@ -351,16 +519,15 @@ class AsyncHTTPCrawler:
 
                     if "url_follow_schema" in sub and isinstance(subval, str) and subval:
                         nested_url = self._resolve_url(source_url, subval)
-                        nested = await self.fetch(nested_url, sub["url_follow_schema"], *args, **kwargs)
-                        if isinstance(nested, list) and len(nested) == 1:
-                            obj[sub["name"]] = nested[0]
-                        elif isinstance(nested, list):
-                            nested_obj = {}
-                            for n in nested:
-                                nested_obj.update(n)
-                            obj[sub["name"]] = nested_obj
-                        else:
-                            obj[sub["name"]] = nested
+                        nested = await self._fetch_nested(
+                            nested_url,
+                            sub["url_follow_schema"],
+                            retry_config,
+                            cache_nested_requests,
+                            *args,
+                            **kwargs,
+                        )
+                        obj[sub["name"]] = self._merge_nested_records(nested)
                     else:
                         obj[sub["name"]] = subval
                 values.append(obj)
@@ -373,6 +540,24 @@ class AsyncHTTPCrawler:
         if list_formatter and callable(list_formatter):
             values = list_formatter(values)
         return values
+
+    async def _fetch_nested(
+        self,
+        nested_url: str,
+        nested_schema: HTTPCrawlerSchema,
+        retry_config: RequestRetrySchema,
+        cache_nested_requests: bool,
+        *args,
+        **kwargs,
+    ):
+        cache_key = (nested_url, id(nested_schema))
+        if cache_nested_requests and cache_key in self._nested_cache:
+            return copy.deepcopy(self._nested_cache[cache_key])
+
+        nested = await self.fetch(nested_url, nested_schema, *args, **kwargs)
+        if cache_nested_requests:
+            self._nested_cache[cache_key] = copy.deepcopy(nested)
+        return nested
 
     def _apply_formatters(self, value, pre, post, type_, default):
         if pre:
@@ -431,8 +616,38 @@ class AsyncHTTPCrawler:
                 raise InvalidSchema("list fields must define selector")
 
     @staticmethod
+    def _merge_nested_records(nested):
+        if isinstance(nested, list) and len(nested) == 1:
+            return nested[0]
+        if isinstance(nested, list):
+            nested_obj = {}
+            for item in nested:
+                if isinstance(item, dict):
+                    nested_obj.update(item)
+            return nested_obj
+        return nested
+
+    @staticmethod
     def _resolve_url(source_url: str, candidate_url: str) -> str:
         return urljoin(source_url, candidate_url)
+
+    @staticmethod
+    def _get_retry_config(schema: HTTPCrawlerSchema) -> RequestRetrySchema:
+        retry = schema.get("request_retry", {})
+        attempts = max(1, int(retry.get("attempts", 1)))
+        delay = max(0.0, float(retry.get("delay", 0.0)))
+        backoff = max(1.0, float(retry.get("backoff", 2.0)))
+        max_delay = max(0.0, float(retry.get("max_delay", 30.0)))
+        retry_on_status = list(retry.get("retry_on_status", [429, 500, 502, 503, 504]))
+        retry_on_exceptions = bool(retry.get("retry_on_exceptions", True))
+        return {
+            "attempts": attempts,
+            "delay": delay,
+            "backoff": backoff,
+            "max_delay": max_delay,
+            "retry_on_status": retry_on_status,
+            "retry_on_exceptions": retry_on_exceptions,
+        }
 
     async def __aenter__(self):
         if self.session is None:
