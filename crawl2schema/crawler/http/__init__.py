@@ -4,6 +4,7 @@ import aiohttp
 import json
 import time
 import copy
+import re
 from urllib.parse import urljoin
 from selectolax.parser import HTMLParser
 from ..schema import HTTPCrawlerSchema, HTTPFieldSchema, URLPaginationSchema, RequestRetrySchema
@@ -48,7 +49,7 @@ class SyncHTTPCrawler:
                     **kwargs,
                 )
             )
-        return records
+        return self._finalize_records(records, schema)
 
     def _request_with_retries(self, url: str, retry_config: RequestRetrySchema, *args, **kwargs):
         attempts = retry_config["attempts"]
@@ -118,11 +119,19 @@ class SyncHTTPCrawler:
                     )
                     continue
 
-                el = parent.css_first(selector) if selector else None
-                value = default
-                if el:
-                    value = el.text() if not attr else el.attributes.get(attr, default)
-                    value = self._apply_formatters(value, preformatter, postformatter, type_, default)
+                value = self._extract_scalar_value(
+                    parent=parent,
+                    selector=selector,
+                    attr=attr,
+                    default=default,
+                    type_=type_,
+                    preformatter=preformatter,
+                    postformatter=postformatter,
+                    required=bool(field.get("required", False)),
+                    extract_regex=field.get("extract_regex"),
+                    extract_regex_group=int(field.get("extract_regex_group", 0)),
+                    field_name=field.get("name"),
+                )
 
                 if url_follow_schema and isinstance(value, str) and value:
                     try:
@@ -173,10 +182,18 @@ class SyncHTTPCrawler:
                     subtype = sub.get("type", "text")
                     sub_pre = sub.get("preformatter")
                     sub_post = sub.get("postformatter")
-                    subval = subdefault
+                    if bool(sub.get("required", False)) and subel is None:
+                        raise ParseError(f"Required subfield '{sub.get('name')}' not found")
 
+                    subval = subdefault
                     if subel:
-                        subval = subel.text() if not subattr else subel.attributes.get(subattr, subdefault)
+                        subval = self._extract_text_or_attribute(subel, subattr, subdefault)
+                        subval = self._apply_regex_extract(
+                            subval,
+                            sub.get("extract_regex"),
+                            int(sub.get("extract_regex_group", 0)),
+                            sub.get("name"),
+                        )
                         subval = self._apply_formatters(subval, sub_pre, sub_post, subtype, subdefault)
 
                     if "url_follow_schema" in sub and isinstance(subval, str) and subval:
@@ -202,6 +219,43 @@ class SyncHTTPCrawler:
         if list_formatter and callable(list_formatter):
             values = list_formatter(values)
         return values
+
+    def _extract_scalar_value(
+        self,
+        parent,
+        selector: Optional[str],
+        attr: Optional[str],
+        default: Any,
+        type_: str,
+        preformatter: Optional[Callable],
+        postformatter: Optional[Callable],
+        required: bool,
+        extract_regex,
+        extract_regex_group: int,
+        field_name: Optional[str],
+    ):
+        el = parent.css_first(selector) if selector else None
+        if required and el is None:
+            raise ParseError(f"Required field '{field_name}' not found")
+        if el is None:
+            return default
+
+        value = self._extract_text_or_attribute(el, attr, default)
+        value = self._apply_regex_extract(value, extract_regex, extract_regex_group, field_name)
+        return self._apply_formatters(value, preformatter, postformatter, type_, default)
+
+    @staticmethod
+    def _extract_text_or_attribute(el, attr: Optional[str], default: Any):
+        return el.text() if not attr else el.attributes.get(attr, default)
+
+    @staticmethod
+    def _apply_regex_extract(value, pattern, group: int, field_name: Optional[str]):
+        if pattern is None or value is None:
+            return value
+        match = re.search(pattern, str(value))
+        if match is None:
+            raise ParseError(f"Regex extract failed for field '{field_name}'")
+        return match.group(group)
 
     def _fetch_nested(
         self,
@@ -276,6 +330,8 @@ class SyncHTTPCrawler:
                 raise InvalidSchema("each field must define a non-empty name")
             if field.get("type") == "list" and not field.get("selector"):
                 raise InvalidSchema("list fields must define selector")
+            if field.get("extract_regex_group") is not None and not isinstance(field.get("extract_regex_group"), int):
+                raise InvalidSchema("extract_regex_group must be an integer")
 
     @staticmethod
     def _merge_nested_records(nested):
@@ -310,6 +366,40 @@ class SyncHTTPCrawler:
             "retry_on_status": retry_on_status,
             "retry_on_exceptions": retry_on_exceptions,
         }
+
+    @staticmethod
+    def _finalize_records(records: List[Dict[str, Any]], schema: HTTPCrawlerSchema) -> List[Dict[str, Any]]:
+        transformed: List[Dict[str, Any]] = []
+        record_transform = schema.get("record_transform")
+        record_filter = schema.get("record_filter")
+        deduplicate_by = schema.get("deduplicate_by", [])
+        include_metadata = bool(schema.get("include_metadata", False))
+
+        for idx, record in enumerate(records):
+            candidate = dict(record)
+            if include_metadata:
+                candidate["_meta"] = {
+                    "record_index": idx,
+                    "extracted_at": time.time(),
+                }
+            if record_transform and callable(record_transform):
+                candidate = record_transform(candidate)
+            if record_filter and callable(record_filter) and not record_filter(candidate):
+                continue
+            transformed.append(candidate)
+
+        if not deduplicate_by:
+            return transformed
+
+        deduped: List[Dict[str, Any]] = []
+        seen = set()
+        for record in transformed:
+            signature = tuple(record.get(key) for key in deduplicate_by)
+            if signature in seen:
+                continue
+            seen.add(signature)
+            deduped.append(record)
+        return deduped
 
     def __enter__(self):
         return self
@@ -357,7 +447,8 @@ class AsyncHTTPCrawler:
             for page_url in urls
         ]
         results = await asyncio.gather(*tasks)
-        return [r for sublist in results for r in sublist]
+        flattened = [r for sublist in results for r in sublist]
+        return self._finalize_records(flattened, schema)
 
     async def _request_with_retries(self, url: str, retry_config: RequestRetrySchema, *args, **kwargs):
         attempts = retry_config["attempts"]
@@ -460,11 +551,19 @@ class AsyncHTTPCrawler:
                     )
                     continue
 
-                el = parent.css_first(selector) if selector else None
-                value = default
-                if el:
-                    value = el.text() if not attr else el.attributes.get(attr, default)
-                    value = self._apply_formatters(value, preformatter, postformatter, type_, default)
+                value = self._extract_scalar_value(
+                    parent=parent,
+                    selector=selector,
+                    attr=attr,
+                    default=default,
+                    type_=type_,
+                    preformatter=preformatter,
+                    postformatter=postformatter,
+                    required=bool(field.get("required", False)),
+                    extract_regex=field.get("extract_regex"),
+                    extract_regex_group=int(field.get("extract_regex_group", 0)),
+                    field_name=field.get("name"),
+                )
 
                 if url_follow_schema and isinstance(value, str) and value:
                     nested_url = self._resolve_url(source_url, value)
@@ -512,9 +611,18 @@ class AsyncHTTPCrawler:
                     subtype = sub.get("type", "text")
                     sub_pre = sub.get("preformatter")
                     sub_post = sub.get("postformatter")
+                    if bool(sub.get("required", False)) and subel is None:
+                        raise ParseError(f"Required subfield '{sub.get('name')}' not found")
+
                     subval = subdefault
                     if subel:
-                        subval = subel.text() if not subattr else subel.attributes.get(subattr, subdefault)
+                        subval = self._extract_text_or_attribute(subel, subattr, subdefault)
+                        subval = self._apply_regex_extract(
+                            subval,
+                            sub.get("extract_regex"),
+                            int(sub.get("extract_regex_group", 0)),
+                            sub.get("name"),
+                        )
                         subval = self._apply_formatters(subval, sub_pre, sub_post, subtype, subdefault)
 
                     if "url_follow_schema" in sub and isinstance(subval, str) and subval:
@@ -577,6 +685,43 @@ class AsyncHTTPCrawler:
             value = post(value)
         return value
 
+    def _extract_scalar_value(
+        self,
+        parent,
+        selector: Optional[str],
+        attr: Optional[str],
+        default: Any,
+        type_: str,
+        preformatter: Optional[Callable],
+        postformatter: Optional[Callable],
+        required: bool,
+        extract_regex,
+        extract_regex_group: int,
+        field_name: Optional[str],
+    ):
+        el = parent.css_first(selector) if selector else None
+        if required and el is None:
+            raise ParseError(f"Required field '{field_name}' not found")
+        if el is None:
+            return default
+
+        value = self._extract_text_or_attribute(el, attr, default)
+        value = self._apply_regex_extract(value, extract_regex, extract_regex_group, field_name)
+        return self._apply_formatters(value, preformatter, postformatter, type_, default)
+
+    @staticmethod
+    def _extract_text_or_attribute(el, attr: Optional[str], default: Any):
+        return el.text() if not attr else el.attributes.get(attr, default)
+
+    @staticmethod
+    def _apply_regex_extract(value, pattern, group: int, field_name: Optional[str]):
+        if pattern is None or value is None:
+            return value
+        match = re.search(pattern, str(value))
+        if match is None:
+            raise ParseError(f"Regex extract failed for field '{field_name}'")
+        return match.group(group)
+
     def _build_paginated_urls(
         self, url: str, pagination: Optional[URLPaginationSchema]
     ) -> List[str]:
@@ -614,6 +759,8 @@ class AsyncHTTPCrawler:
                 raise InvalidSchema("each field must define a non-empty name")
             if field.get("type") == "list" and not field.get("selector"):
                 raise InvalidSchema("list fields must define selector")
+            if field.get("extract_regex_group") is not None and not isinstance(field.get("extract_regex_group"), int):
+                raise InvalidSchema("extract_regex_group must be an integer")
 
     @staticmethod
     def _merge_nested_records(nested):
@@ -648,6 +795,40 @@ class AsyncHTTPCrawler:
             "retry_on_status": retry_on_status,
             "retry_on_exceptions": retry_on_exceptions,
         }
+
+    @staticmethod
+    def _finalize_records(records: List[Dict[str, Any]], schema: HTTPCrawlerSchema) -> List[Dict[str, Any]]:
+        transformed: List[Dict[str, Any]] = []
+        record_transform = schema.get("record_transform")
+        record_filter = schema.get("record_filter")
+        deduplicate_by = schema.get("deduplicate_by", [])
+        include_metadata = bool(schema.get("include_metadata", False))
+
+        for idx, record in enumerate(records):
+            candidate = dict(record)
+            if include_metadata:
+                candidate["_meta"] = {
+                    "record_index": idx,
+                    "extracted_at": time.time(),
+                }
+            if record_transform and callable(record_transform):
+                candidate = record_transform(candidate)
+            if record_filter and callable(record_filter) and not record_filter(candidate):
+                continue
+            transformed.append(candidate)
+
+        if not deduplicate_by:
+            return transformed
+
+        deduped: List[Dict[str, Any]] = []
+        seen = set()
+        for record in transformed:
+            signature = tuple(record.get(key) for key in deduplicate_by)
+            if signature in seen:
+                continue
+            seen.add(signature)
+            deduped.append(record)
+        return deduped
 
     async def __aenter__(self):
         if self.session is None:

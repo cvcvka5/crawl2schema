@@ -3,7 +3,7 @@ import copy
 import pytest
 
 from crawl2schema.crawler.http import SyncHTTPCrawler, AsyncHTTPCrawler
-from crawl2schema.exceptions import InvalidSchema, PaginationError, RequestError
+from crawl2schema.exceptions import InvalidSchema, PaginationError, RequestError, ParseError
 
 
 class FakeSyncResponse:
@@ -346,5 +346,110 @@ def test_async_supports_async_on_pageload_callback():
         }
         await crawler.fetch(main_url, schema=schema)
         assert callback_log == [200]
+
+    asyncio.run(run())
+
+
+def test_sync_regex_required_filter_transform_dedup_and_metadata():
+    url = "https://example.com/products"
+    session = FakeSyncSession(
+        {
+            url: """
+            <div class='product'><h3 class='name'>Phone</h3><span class='price'>$19.99</span><span class='rating'>Rating: 4.6/5</span></div>
+            <div class='product'><h3 class='name'>Phone</h3><span class='price'>$19.99</span><span class='rating'>Rating: 4.6/5</span></div>
+            <div class='product'><h3 class='name'>Cable</h3><span class='price'>$3.50</span><span class='rating'>Rating: 3.8/5</span></div>
+            """
+        }
+    )
+    crawler = SyncHTTPCrawler(session=session)
+    schema = {
+        "base_selector": "div.product",
+        "fields": [
+            {"name": "name", "selector": "h3.name", "type": "text", "required": True},
+            {"name": "price", "selector": "span.price", "type": "number", "extract_regex": r"\\$(\\d+\\.\\d+)"},
+            {"name": "rating", "selector": "span.rating", "type": "number", "extract_regex": r"Rating:\\s(\\d+\\.\\d+)"},
+        ],
+        "record_filter": lambda row: row["rating"] >= 4.0,
+        "record_transform": lambda row: {**row, "name": row["name"].upper()},
+        "deduplicate_by": ["name", "price"],
+        "include_metadata": True,
+    }
+
+    data = crawler.fetch(url, schema=schema)
+
+    assert len(data) == 1
+    assert data[0]["name"] == "PHONE"
+    assert data[0]["price"] == 19.99
+    assert data[0]["rating"] == 4.6
+    assert "_meta" in data[0]
+    assert data[0]["_meta"]["record_index"] == 0
+
+
+def test_sync_required_field_raises_parse_error():
+    url = "https://example.com/products"
+    session = FakeSyncSession(
+        {
+            url: "<div class='product'><span class='price'>$10</span></div>",
+        }
+    )
+    crawler = SyncHTTPCrawler(session=session)
+    schema = {
+        "base_selector": "div.product",
+        "fields": [{"name": "name", "selector": "h3.name", "type": "text", "required": True}],
+    }
+
+    with pytest.raises(ParseError):
+        crawler.fetch(url, schema=schema)
+
+
+def test_async_regex_required_filter_transform_dedup_and_metadata():
+    async def run():
+        url = "https://example.com/products"
+        session = FakeAsyncSession(
+            {
+                url: """
+                <div class='product'><h3 class='name'>Phone</h3><span class='price'>$19.99</span><span class='rating'>Rating: 4.6/5</span></div>
+                <div class='product'><h3 class='name'>Phone</h3><span class='price'>$19.99</span><span class='rating'>Rating: 4.6/5</span></div>
+                <div class='product'><h3 class='name'>Cable</h3><span class='price'>$3.50</span><span class='rating'>Rating: 3.8/5</span></div>
+                """
+            }
+        )
+        crawler = AsyncHTTPCrawler(session=session)
+        schema = {
+            "base_selector": "div.product",
+            "fields": [
+                {"name": "name", "selector": "h3.name", "type": "text", "required": True},
+                {"name": "price", "selector": "span.price", "type": "number", "extract_regex": r"\\$(\\d+\\.\\d+)"},
+                {"name": "rating", "selector": "span.rating", "type": "number", "extract_regex": r"Rating:\\s(\\d+\\.\\d+)"},
+            ],
+            "record_filter": lambda row: row["rating"] >= 4.0,
+            "record_transform": lambda row: {**row, "name": row["name"].upper()},
+            "deduplicate_by": ["name", "price"],
+            "include_metadata": True,
+        }
+
+        data = await crawler.fetch(url, schema=schema)
+
+        assert len(data) == 1
+        assert data[0]["name"] == "PHONE"
+        assert data[0]["price"] == 19.99
+        assert data[0]["rating"] == 4.6
+        assert "_meta" in data[0]
+        assert data[0]["_meta"]["record_index"] == 0
+
+    asyncio.run(run())
+
+
+def test_async_required_field_raises_parse_error():
+    async def run():
+        url = "https://example.com/products"
+        session = FakeAsyncSession({url: "<div class='product'><span class='price'>$10</span></div>"})
+        crawler = AsyncHTTPCrawler(session=session)
+        schema = {
+            "base_selector": "div.product",
+            "fields": [{"name": "name", "selector": "h3.name", "type": "text", "required": True}],
+        }
+        with pytest.raises(ParseError):
+            await crawler.fetch(url, schema=schema)
 
     asyncio.run(run())

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TypedDict, List, Callable, Any, Literal, Generic, TypeVar, Tuple
+from typing import TypedDict, List, Callable, Any, Literal, Generic, TypeVar, Tuple, Pattern
 from requests import Response
 from playwright.sync_api import Page as SyncPage
 from playwright.async_api import Page as AsyncPage
@@ -21,6 +21,9 @@ class BaseFieldSchema(Generic[T], TypedDict, total=True):
     preformatter: Callable[[Any], Any]
     postformatter: Callable[[Any], Any]
     list_formatter: Callable[[List[Any]], Any]
+    extract_regex: str | Pattern[str]
+    extract_regex_group: int
+    required: bool
     
 class HTTPFieldSchema(BaseFieldSchema):
     url_follow_schema: HTTPCrawlerSchema
@@ -112,6 +115,10 @@ class HTTPCrawlerSchema(BaseCrawlerSchema, total=True):
     on_pageload: Callable[[Response], None]
     request_retry: RequestRetrySchema
     cache_nested_requests: bool
+    record_filter: Callable[[Dict[str, Any]], bool]
+    record_transform: Callable[[Dict[str, Any]], Dict[str, Any]]
+    deduplicate_by: List[str]
+    include_metadata: bool
 
 
 class WaitForSelectorArgs(TypedDict, total=False):
@@ -154,4 +161,3 @@ class AsyncBrowserCrawlerSchema(BrowserCrawlerSchema, total=True):
     fields: List[AsyncBrowserFieldSchema]
     on_pageload: Callable[[AsyncPage], None]
     on_scroll: Callable[[AsyncPage], None]
-
