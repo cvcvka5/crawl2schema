@@ -20,6 +20,9 @@
 * **Nested data support:** Follow links and extract deeper content using nested schemas.
 * **Structured output:** Returns data as clean lists of dictionaries.
 * **Custom formatting:** Apply transformations to your data on the fly.
+* **Retry + backoff controls:** Automatic recovery for flaky endpoints and rate limits.
+* **Nested-request caching:** Avoid repeated deep-page fetches for faster extraction.
+* **Browser stealth and speed profile:** Optional stealth mode, resource blocking, and delay jitter controls.
 
 ---
 
@@ -111,6 +114,31 @@ print(f"Total products fetched: {len(results)}\n")
 # Print first product including nested reviews
 from pprint import pprint
 pprint(results[0])
+```
+
+### Advanced: Reliability & Speed Controls
+
+```python
+from crawl2schema.crawler.http import SyncHTTPCrawler
+
+crawler = SyncHTTPCrawler()
+schema = {
+    "base_selector": "div.product",
+    "fields": [
+        {"name": "name", "selector": "h3 > a", "type": "text"},
+        {"name": "href", "selector": "h3 > a", "attribute": "href", "type": "text"},
+    ],
+    "request_retry": {
+        "attempts": 4,
+        "delay": 0.5,
+        "backoff": 2.0,
+        "max_delay": 4.0,
+        "retry_on_status": [429, 500, 502, 503, 504]
+    },
+    "cache_nested_requests": True
+}
+
+data = crawler.fetch("https://web-scraping.dev/products", schema=schema)
 ```
 
 ---
@@ -210,6 +238,26 @@ schema: BrowserCrawlerSchema = {
 
 url = "https://www.hhcfriends.eu/collections/buy-10-oh-thc-vapes"
 data = crawler.fetch(url, schema=schema)
+```
+
+### Browser Stealth & Speed Profile
+```python
+from crawl2schema.crawler.browser import SyncBrowserCrawler
+
+crawler = SyncBrowserCrawler(
+    headless=True,
+    stealth_mode=True,
+    block_resource_types=["image", "font", "media", "stylesheet"],
+)
+
+schema = {
+    "base_selector": "div.product",
+    "fields": [{"name": "title", "selector": "h3", "type": "text"}],
+    "request_delay": 0.2,
+    "jitter_delay": 0.15,
+    "stealth_mode": True,
+    "block_resource_types": ["image", "font", "media", "stylesheet"],
+}
 ```
 
 ### Advanced: Pagionation with Button Clicking

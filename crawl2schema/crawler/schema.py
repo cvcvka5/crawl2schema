@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TypedDict, List, Callable, Any, Literal, Generic, TypeVar, Tuple
+from typing import TypedDict, List, Callable, Any, Literal, Generic, TypeVar, Tuple, Pattern
 from requests import Response
 from playwright.sync_api import Page as SyncPage
 from playwright.async_api import Page as AsyncPage
@@ -21,6 +21,9 @@ class BaseFieldSchema(Generic[T], TypedDict, total=True):
     preformatter: Callable[[Any], Any]
     postformatter: Callable[[Any], Any]
     list_formatter: Callable[[List[Any]], Any]
+    extract_regex: str | Pattern[str]
+    extract_regex_group: int
+    required: bool
     
 class HTTPFieldSchema(BaseFieldSchema):
     url_follow_schema: HTTPCrawlerSchema
@@ -42,6 +45,14 @@ class URLPaginationSchema(TypedDict, total=False):
     page_placeholder: str
     start_page: int
     end_page: int
+
+class RequestRetrySchema(TypedDict, total=False):
+    attempts: int
+    delay: float
+    backoff: float
+    max_delay: float
+    retry_on_status: List[int]
+    retry_on_exceptions: bool
 
 
 # ---- Scroll Pagination ----
@@ -102,6 +113,12 @@ class HTTPCrawlerSchema(BaseCrawlerSchema, total=True):
     fields: List[HTTPFieldSchema]
     url_pagination: URLPaginationSchema
     on_pageload: Callable[[Response], None]
+    request_retry: RequestRetrySchema
+    cache_nested_requests: bool
+    record_filter: Callable[[Dict[str, Any]], bool]
+    record_transform: Callable[[Dict[str, Any]], Dict[str, Any]]
+    deduplicate_by: List[str]
+    include_metadata: bool
 
 
 class WaitForSelectorArgs(TypedDict, total=False):
@@ -120,6 +137,10 @@ class BrowserCrawlerSchema(BaseCrawlerSchema, total=True):
     scroll_pagination: ScrollPaginationSchema
     button_pagination: ButtonPaginationSchema
     url_pagination: URLPaginationSchema
+    block_resource_types: List[Literal["image", "media", "font", "stylesheet", "xhr", "fetch", "websocket", "other"]]
+    request_delay: float
+    jitter_delay: float
+    stealth_mode: bool
     
 
 class SyncBrowserCrawlerSchema(BrowserCrawlerSchema, total=True):
